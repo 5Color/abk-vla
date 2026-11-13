@@ -1,0 +1,22 @@
+{
+  "title": "ABK-VLA: Task-ID-Free Continual Visuomotor Policy Learning via Autonomous B-Spline Knot Compression and Visual Prototype Routing",
+  "description": "Official open-source implementation, pretrained checkpoint, 2D multi-stroke continual learning benchmark, OOD perturbation & multi-seed order stress tests, Hard Argmax vs Select-then-Blend ablation, 3D Meta-World continual manipulation port, and preprint PDF for ABK-VLA.",
+  "creators": [
+    {
+      "name": "Son, Seungjoon",
+      "affiliation": "Independent AI & Robotics Researcher, Daejeon, Republic of Korea"
+    }
+  ],
+  "keywords": [
+    "continual-learning",
+    "visuomotor-policy",
+    "b-spline",
+    "action-chunking",
+    "robotics",
+    "pytorch",
+    "task-id-free",
+    "metaworld"
+  ],
+  "license": "MIT",
+  "upload_type": "software"
+}
