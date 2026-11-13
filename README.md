@@ -12,7 +12,7 @@
 
 By compressing $H = 16$ action chunks into $N_k = 6$ **cubic B-spline control knots** and pairing frozen visual-spatial backbone representations (`4.59M` shared parameters) with lightweight residual Winner-Take-All (WTA) slot heads (`0.33M` parameters per residual slot, `7.16%` of the backbone, `94.44%` total model frozen at $T_3$) and **task-ID-free visual prototype routing (`Select-then-Blend`, $T = 0.05$)**, ABK-VLA achieves **`99.98%` average diagonal routing confidence (`4/4` slot match on canonical targets)**, **`1.66%` forgetting rate**, and **`85.59%` average final $F_1$** across a 4-task sequential benchmark (`apple → sprout → star → cat`)—recovering **`92.1%` of the external-`Task-ID` Oracle baseline (`92.96%`)** without any replay data or test-time task labels.
 
-*(For the earlier Phase 1 closed-loop ACT baseline and crowdsourced web benchmark, see [`paper/main.tex`](./paper/main.tex) and [`Drawing_VLA.pdf`](./Drawing_VLA.pdf).)*
+*(For the earlier Phase 1 closed-loop ACT baseline and crowdsourced web benchmark, see [`paper/main.tex`](./paper/main.tex), [`Drawing_VLA.pdf`](https://github.com/5Color/drawing-vla/blob/main/Drawing_VLA.pdf), and [5Color/drawing-vla](https://github.com/5Color/drawing-vla).)*
 
 ---
 
