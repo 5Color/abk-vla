@@ -74,12 +74,44 @@ All five models were evaluated on **Intel(R) Arc Graphics (`xpu`, FP32, PyTorch 
 
 ---
 
+## 3B. Follow-Up Stress Tests & 3D Generalization (Experiments 1–4)
+
+To stress-test every theoretical and empirical claim under strict continual learning conditions, we added four follow-up benchmarks:
+
+| Experiment | Script | Key Verified Result | Figure |
+| :--- | :--- | :--- | :---: |
+| **Exp 1: OOD Routing & Key Ablation** | [`experiments/eval_routing_perturbation.py`](experiments/eval_routing_perturbation.py) | Hybrid key (`0.5·Conv4 + 1.0·Spatial`) keeps **100.0%** routing up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%); balanced 50/50 reaches **90.0%** at ±12 px. | [Perturbation Curve](outputs/exp1_routing_perturbation.png) |
+| **Exp 2: 3-Seed & Task-Order Robustness** | [`experiments/benchmark_multiseed_order.py`](experiments/benchmark_multiseed_order.py) | Across seeds `{42, 43, 44}`, **Forward** achieves `85.15 ± 1.06%` F1 (`FR = 0.61 ± 0.74%`) under Blend and `84.58 ± 1.14%` (`FR = 0.00 ± 0.00%`) under Argmax; **Reverse** achieves `79.50 ± 4.97%` (`FR = 0.06 ± 0.06%`) vs `78.16 ± 5.53%` (`FR = 0.00 ± 0.00%`). | [Multi-Seed Order](outputs/exp2_multiseed_order.png) |
+| **Exp 3: Select-then-Blend vs Hard Argmax** | [`experiments/eval_argmax_vs_blend.py`](experiments/eval_argmax_vs_blend.py) | Switching the same checkpoint to `hard_argmax` eliminates the residual tail-weight forgetting completely (**FR: 1.66% → 0.00%**, Latency **387.8 ms → 357.5 ms**) while Default Blend (`T=0.05`) preserves slightly higher transfer (`85.59%` vs `84.39%` F1). | [Argmax vs Blend](outputs/exp3_argmax_vs_blend.png) |
+| **Exp 4: 3D Meta-World Manipulation** | [`experiments/benchmark_metaworld_cl.py`](experiments/benchmark_metaworld_cl.py) | Ported directly to 4-DoF 3D MuJoCo manipulation (`button-press-v3 -> door-open-v3 -> window-open-v3 -> faucet-open-v3`) with 128×128 RGB + 4-d EEF & DoG+Conv4 key: **91.7% Avg SR / 0.0% FR / +11.1% BWT** (100.0% held-out Task-ID routing) vs Naive FT `43.3% / 75.6% FR`, Replay `88.3% / 13.3% FR`, Oracle Task-ID `90.0%`. | [Meta-World 3D CL](outputs/exp4_metaworld_cl.png) |
+
+<p align="center">
+  <img src="outputs/exp3_argmax_vs_blend.png" width="49%" alt="Select-then-Blend vs Hard Argmax">
+  <img src="outputs/exp1_routing_perturbation.png" width="49%" alt="OOD Routing Perturbation Curves">
+</p>
+<p align="center">
+  <img src="outputs/exp2_multiseed_order.png" width="49%" alt="3-Seed Forward and Reverse Order">
+  <img src="outputs/exp4_metaworld_cl.png" width="49%" alt="Meta-World 3D Continual Learning Benchmark">
+</p>
+
+### Meta-World 3D Continual Manipulation Summary (`outputs/exp4_metaworld_cl.json`)
+
+| Method | Test Task-ID? | Replay? | Final Avg SR (↑) | FR (↓) | BWT (↑) | Routing Acc | Total Params |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Naive FT (1-Head B-Spline) | — | No | 43.3% | 75.6% | -75.6% | — | 1.60M |
+| Experience Replay (256/task) | — | Yes | 88.3% | 13.3% | -13.3% | — | 1.60M |
+| Oracle Task-ID Slots | Yes | No | 90.0% | 0.0% | +0.0% | 100.0% (Oracle) | 2.19M |
+| **Autonomous 3D ABK (Hard Argmax)** | **No** | **No** | 86.7% | **0.0%** | +0.0% | **100.0%** | 2.19M |
+| **Autonomous 3D ABK (Select-then-Blend)** | **No** | **No** | **91.7%** | **0.0%** | **+11.1%** | **100.0%** | 2.19M |
+
+---
+
 ## 4. Scope & Honest Limitations
 
 To ensure transparent scientific interpretation, we explicitly define the operational boundaries of this study:
-* **Goal-Image-Conditioned Benchmark Scope (No Language Conditioning):** In this repository, "ABK-VLA" refers to a compact **goal-image-conditioned** visuomotor action-chunking policy evaluated on a 2D multi-stroke drawing testbed as a controlled benchmark for continual motor control. The current implementation does not include a language encoder or VLM/LLM backbone.
-* **Training Task Boundaries & Static Prototype Keys:** Inference is `Task-ID`-free, but sequential training assumes discrete task boundaries where `register_or_expand_slot(..., thr=0.85)` is invoked per task loader (`max_prior_sim`: `0.351`, `0.491`, `0.593`). Furthermore, the `5,376-d` prototype key devotes $80\%$ of its squared L2 norm to multi-scale pixel pooling, and the `99.98%` routing matrix is measured on the 4 canonical static target templates themselves (self-similarity $= 1.0$) rather than affine-perturbed or noisy OOD target queries.
-* **Linear Slot Scaling & Dynamic Patience Trade-Off:** Because `predict()` evaluates all $K$ slots via Select-then-Blend, inference cost and parameters grow as $O(K)$ (`5.90M` total at $T_3$). Under `base patience=8` (`effective_patience=16` when $>5\%$ target ink remains, with `stale` throttled `1/3` during air flights), long jumps toward thin auxiliary strokes (e.g., apple leaf, sprout stem, cat whiskers) still occasionally hit stall termination (`62.5%` component recall vs. `87.5%` Oracle). All metrics are from a single-seed (`seed=42`) single-order run in `outputs/autonomous_cl_benchmark.json`.
+* **Goal-Image / Visual-Only Conditioning & Simulation Testbeds:** In this repository, "ABK-VLA" denotes a compact **vision-and-proprioception** visuomotor action-chunking policy validated on a 2D multi-stroke drawing testbed and a 3D Meta-World (`MuJoCo`) continual manipulation benchmark (Experiments 1–4). The current implementation does not include a language encoder/VLM backbone or physical hardware validation.
+* **Training Task Boundaries & Key Sensitivity Under Extreme OOD Shifts:** Inference is `Task-ID`-free, though sequential training invokes `register_or_expand_slot` at discrete task boundaries. Experiment 1 confirms `100.0%` routing accuracy up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%), while closed-loop OOD rollout F1 drops under stronger target corruptions (`65.04%` at 4 px shift, `29.55%` at `sigma=0.15` noise). In 3D Meta-World, static tabletop background dominance required subtracting a 15×15 local average (DoG residual) and using 8 initial-frame exemplars per slot (`threshold=0.996`).
+* **Linear $O(K)$ Slot Scaling & Blend-vs-Argmax Trade-Off:** Parameters grow linearly (`0.33M`/slot in 2D, `5.90M` total at $T_3$; `0.19M`/slot in 3D, `2.19M` total at $T_3$). Experiment 3 confirms that switching from `Select-then-Blend` (`T=0.05`) to `hard_argmax` eliminates the residual tail-weight forgetting (`1.66%` → `0.00%` FR) at the cost of a minor `-1.20 pp` transfer reduction (`84.39%` vs. `85.59%` F1).
 
 ---
 
@@ -88,7 +120,7 @@ To ensure transparent scientific interpretation, we explicitly define the operat
 ```text
 abk-vla/
 ├── README.md                              # Project overview, benchmark tables, and visual results
-├── requirements.txt                       # Core Python dependencies (torch, numpy, scipy, pillow, matplotlib)
+├── requirements.txt                       # Core Python dependencies (+ optional 3D Meta-World packages)
 ├── paper/
 │   ├── ABK_VLA_Paper.tex                  # Full two-column LaTeX preprint manuscript
 │   ├── ABK_VLA_Preprint.pdf               # Compiled preprint PDF
@@ -100,7 +132,7 @@ abk-vla/
 │       ├── bspline_vla_dataset_star_m6_h16_s8.npz
 │       └── bspline_vla_dataset_cat_m6_h16_s8.npz
 ├── train/
-│   ├── bspline_policy.py                  # AutonomousABKPolicy, BSplineModelCPolicy, GRU & MLP baselines
+│   ├── bspline_policy.py                  # AutonomousABKPolicy (blend & argmax), BSplineModelCPolicy, GRU, MLP
 │   ├── rollout_bspline.py                 # Closed-loop rollout engine, post-hoc C0/C1 & stall patience
 │   └── dataset.py                         # Observation rendering and trajectory utilities
 ├── tools/
@@ -108,17 +140,25 @@ abk-vla/
 │   └── bspline_augment.py                 # Equivariant affine/elastic/covariate augmentation & pen loss
 ├── experiments/
 │   ├── benchmark_autonomous_cl.py         # 5-model continual learning benchmark runner
-│   └── benchmark_three_models.py          # Shared data loader, device utilities, and 3-model runner
+│   ├── benchmark_three_models.py          # Shared data loader, device utilities, and 3-model runner
+│   ├── eval_routing_perturbation.py       # [Exp 1] OOD perturbation routing curves, key ablation & rollout F1
+│   ├── benchmark_multiseed_order.py       # [Exp 2] 3-seed ({42,43,44}) Forward & Reverse task-order benchmark
+│   ├── eval_argmax_vs_blend.py            # [Exp 3] Select-then-Blend (T sweep) vs Hard Argmax comparison
+│   └── benchmark_metaworld_cl.py          # [Exp 4] 3D Meta-World MuJoCo 4-task continual manipulation benchmark
 ├── tests/
 │   ├── test_bspline_core.py               # Unit tests for B-spline basis and BVLS fitting
-│   └── test_bspline_policy.py             # Unit tests for policy architectures and loss interfaces
+│   └── test_bspline_policy.py             # Unit tests for policy architectures, blend/argmax, and loss interfaces
 └── outputs/
     ├── autonomous_cl_benchmark.json       # Raw 5-model benchmark metrics & routing matrix
     ├── autonomous_cl_rollout_grid.png     # 4x5 qualitative rollout comparison grid
     ├── autonomous_cl_heatmap.png          # 5-model F1 retention heatmaps
     ├── autonomous_routing_matrix.png      # 4x4 Task-ID-free softmax routing matrix
     ├── autonomous_model_d_rollout.png     # Model D standalone rollout grid
-    └── autonomous_model_d_final.pth       # Trained 4-task AutonomousABKPolicy checkpoint
+    ├── autonomous_model_d_final.pth       # Trained 4-task AutonomousABKPolicy checkpoint
+    ├── exp1_routing_perturbation.{json,png}
+    ├── exp2_multiseed_order.{json,png}
+    ├── exp3_argmax_vs_blend.{json,png}
+    └── exp4_metaworld_cl.{json,png}
 ```
 
 ### Installation
@@ -147,4 +187,22 @@ python experiments/benchmark_autonomous_cl.py \
   --num-modes 6 \
   --temperature 0.05 \
   --novelty-threshold 0.85
+```
+
+### Run Unit Tests & Follow-Up Verification (Experiments 1–4)
+```bash
+# Core B-spline & policy unit tests (9 tests)
+python -m unittest tests/test_bspline_core.py tests/test_bspline_policy.py -v
+
+# Exp 1: OOD perturbation routing curves, key weight ablation & closed-loop OOD F1
+python experiments/eval_routing_perturbation.py
+
+# Exp 2: 3-seed ({42,43,44}) Forward & Reverse task-order benchmark
+python experiments/benchmark_multiseed_order.py --seeds 42 43 44 --orders forward reverse
+
+# Exp 3: Select-then-Blend (T sweep) vs Hard Argmax slot routing
+python experiments/eval_argmax_vs_blend.py
+
+# Exp 4: 3D Meta-World 4-task continual manipulation (requires gymnasium, mujoco, metaworld)
+python experiments/benchmark_metaworld_cl.py --epochs 55 --n-eval 15
 ```

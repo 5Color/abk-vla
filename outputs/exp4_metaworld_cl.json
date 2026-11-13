@@ -1,0 +1,227 @@
+{
+  "tasks": [
+    "button-press-v3",
+    "door-open-v3",
+    "window-open-v3",
+    "faucet-open-v3"
+  ],
+  "n_demos": 30,
+  "n_eval": 15,
+  "epochs": 55,
+  "models": {
+    "mw_naive": {
+      "label": "Naive FT (3D B-Spline)",
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.7333333492279053
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "summary": {
+        "avg_final_f1": 0.4333333373069763,
+        "avg_forgetting": 0.7555555502573649,
+        "avg_bwt": -0.7555555502573649
+      },
+      "total_params": 1597848,
+      "trainable_T3": 1597848
+    },
+    "mw_replay": {
+      "label": "Exp. Replay (256/task)",
+      "R": [
+        [
+          1.0,
+          1.0,
+          0.9333333373069763,
+          0.9333333373069763
+        ],
+        [
+          0.0,
+          0.9333333373069763,
+          0.800000011920929,
+          0.7333333492279053
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.8666666746139526
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "summary": {
+        "avg_final_f1": 0.8833333253860474,
+        "avg_forgetting": 0.13333332538604736,
+        "avg_bwt": -0.13333332538604736
+      },
+      "total_params": 1597848,
+      "trainable_T3": 1597848
+    },
+    "mw_oracle": {
+      "label": "Oracle Slots (Task-ID)",
+      "R": [
+        [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.8666666746139526,
+          0.8666666746139526,
+          0.8666666746139526
+        ],
+        [
+          0.0,
+          0.0,
+          0.7333333492279053,
+          0.7333333492279053
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "summary": {
+        "avg_final_f1": 0.8999999761581421,
+        "avg_forgetting": 0.0,
+        "avg_bwt": 0.0
+      },
+      "total_params": 2192856,
+      "trainable_T3": 187542
+    },
+    "mw_auto_abk_blend": {
+      "label": "Autonomous 3D ABK-VLA (Ours) (Blend)",
+      "R": [
+        [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.9333333373069763,
+          0.9333333373069763,
+          0.9333333373069763
+        ],
+        [
+          0.0,
+          0.0,
+          0.4000000059604645,
+          0.7333333492279053
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "summary": {
+        "avg_final_f1": 0.9166666865348816,
+        "avg_forgetting": 0.0,
+        "avg_bwt": 0.11111111442248027
+      },
+      "total_params": 2192859,
+      "trainable_T3": 187543,
+      "heldout_routing_acc": 1.0,
+      "heldout_routing_conf": 0.9971471905708312,
+      "expansion_logs": [
+        {
+          "step": 0,
+          "task": "button-press-v3",
+          "slot": 0,
+          "expanded": true,
+          "max_prior_sim": 0.0
+        },
+        {
+          "step": 1,
+          "task": "door-open-v3",
+          "slot": 1,
+          "expanded": true,
+          "max_prior_sim": 0.8143110275268555
+        },
+        {
+          "step": 2,
+          "task": "window-open-v3",
+          "slot": 2,
+          "expanded": true,
+          "max_prior_sim": 0.9591647386550903
+        },
+        {
+          "step": 3,
+          "task": "faucet-open-v3",
+          "slot": 3,
+          "expanded": true,
+          "max_prior_sim": 0.979218602180481
+        }
+      ]
+    },
+    "mw_auto_abk_argmax": {
+      "label": "Autonomous 3D ABK-VLA (Ours) (Argmax)",
+      "R": [
+        [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.9333333373069763,
+          0.9333333373069763,
+          0.9333333373069763
+        ],
+        [
+          0.0,
+          0.0,
+          0.6000000238418579,
+          0.6000000238418579
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.9333333373069763
+        ]
+      ],
+      "summary": {
+        "avg_final_f1": 0.8666666746139526,
+        "avg_forgetting": 0.0,
+        "avg_bwt": 0.0
+      },
+      "total_params": 2192859,
+      "trainable_T3": 187543,
+      "heldout_routing_acc": 1.0,
+      "heldout_routing_conf": 0.9971471905708312
+    }
+  }
+}

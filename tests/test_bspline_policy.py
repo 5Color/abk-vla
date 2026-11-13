@@ -172,6 +172,17 @@ class TestBSplinePolicy(unittest.TestCase):
         self.assertEqual(traj_single.shape, (1, self.H, 2))
         self.assertEqual(pen_single.shape, (1, self.H))
 
+        # Hard Argmax 라우팅 검증: Slot 0에 매칭되는 쿼리는 Slot 1 교란과 무관하게 동일한 출력 유지
+        obs_a0 = torch.cat([torch.zeros(1, 1, 128, 128), tgt_a[:1]], dim=1)
+        st_a0 = st_b[:1]
+        policy.reset_cache()
+        cp_arg1, _, _ = policy.predict(obs_a0, st_a0, routing_mode="argmax")
+        with torch.no_grad():
+            policy.slots[1].pts_head.bias.add_(5.0)
+        policy.reset_cache()
+        cp_arg2, _, _ = policy.predict(obs_a0, st_a0, routing_mode="argmax")
+        self.assertTrue(torch.allclose(cp_arg1, cp_arg2, atol=1e-6))
+
 
 if __name__ == "__main__":
     unittest.main()

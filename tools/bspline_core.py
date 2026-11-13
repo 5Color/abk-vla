@@ -175,6 +175,8 @@ def fit_bspline_chunk_bvls(
     lam2 = float(smoothness_weight * scale_n)
     lam1 = float(0.1 * lam2)
 
+    # 설계행렬 B (H x M)과 정규화된 2차 차분행렬 D2 ((M-2) x M)을 수직 결합해
+    # 최소제곱 목적식 ||B P - Y||^2 + lam2 ||D2 P||^2 (C2 곡률 평활화) 구성
     blocks_a = [b_mat]
     blocks_bx = [points[:, 0]]
     blocks_by = [points[:, 1]]
@@ -293,12 +295,15 @@ class BSplineDecoder(torch.nn.Module):
 
     def forward(self, control_points: torch.Tensor) -> torch.Tensor:
         """
+        미분 가능한 선형 행렬곱 기반 Cubic B-Spline 디코더 (학습·추론 공용).
+
+        수식: Y_hat = B @ P, 여기서 B in R^(H x M) 은 사전 계산된 클램프 기저 행렬.
         Args:
-            control_points: (B, M, 2) 제어점 텐서
+            control_points: (B, M, D) 또는 (B, M, 2) 정규화된 제어점 텐서
         Returns:
-            trajectory: (B, H, 2) 복원된 물리 궤적
+            trajectory: (B, H, D) 또는 (B, H, 2) 복원된 물리 궤적 텐서
         """
-        # (H, M) x (B, M, 2) -> (B, H, 2)
+        # 선형 사상: (H, M) x (B, M, D) -> (B, H, D) (경사 역전파 완전 지원)
         return torch.matmul(self.b_mat, control_points)
 
 

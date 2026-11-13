@@ -1041,12 +1041,19 @@ class ResidualWTASlotHead(nn.Module):
         delta_cp: torch.Tensor,
         delta_pen: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Logit-공간 게이팅 잔차 결합: 0스텝에서 기저 조합 보존 + clamp 기울기 소실 방지."""
+        """
+        Logit-공간 잔차 합성: P_s = sigmoid(alpha_s * logit(clamp(P_base, 0.05, 0.95)) + dP_s).
+        - base_cp : (B, M, 2) 또는 (B, 1, M, 2) 직전까지 누적된 기저 제어점 예측
+        - delta_cp: (B, K, M, 2) 신규 슬롯 s가 예측한 K개 후보 모드 잔차 로짓
+        - 학습 극초반 zero-init으로 dP_s ≈ 0, alpha_s ≈ 1 이므로 기저 정책을 훼손하지 않고 안정 초기화.
+        """
         if self.prior_weight is None:
             return delta_cp, delta_pen
+        # 확률 공간 경계(0, 1)에서 logit 기울기 발산 방지 및 0~1 외삽 차단용 클램핑
         base_logit_cp = torch.logit(base_cp.clamp(0.05, 0.95))
         base_pen_safe = base_pen.clamp(-2.5, 2.5)
         if delta_cp.dim() == 4 and base_logit_cp.dim() == 3:
+            # 멀티모드 훈련 시 (B, M, 2) 기저를 (B, 1, M, 2)로 브로드캐스트
             base_logit_cp = base_logit_cp.unsqueeze(1)
             base_pen_safe = base_pen_safe.unsqueeze(1)
         cps = torch.sigmoid(self.prior_weight * base_logit_cp + delta_cp)
@@ -1088,8 +1095,13 @@ class AutonomousABKPolicy(nn.Module):
         smoothness_weight: float = 0.02,
         pen_loss_weight: float = 0.3,
         zero_init_std: float = 1e-3,
+        routing_mode: str = "blend",
+        key_conv_weight: float = 0.5,
+        key_spatial_weight: float = 1.0,
     ):
         super().__init__()
+        if routing_mode not in ("blend", "argmax"):
+            raise ValueError(f"Unsupported routing_mode: {routing_mode}")
         self.num_control_points = num_control_points
         self.horizon = horizon
         self.feat_dim = feat_dim
@@ -1103,6 +1115,9 @@ class AutonomousABKPolicy(nn.Module):
         self.smoothness_weight = smoothness_weight
         self.pen_loss_weight = pen_loss_weight
         self.zero_init_std = zero_init_std
+        self.routing_mode = routing_mode
+        self.key_conv_weight = key_conv_weight
+        self.key_spatial_weight = key_spatial_weight
 
         self.encoder = build_encoder(feat_dim=feat_dim)
         # 물리 상태(px, py, pen) 전용 순수 상태망 (Task 0 이후 동결되어도 도안 무관 일관성 유지)
@@ -1146,7 +1161,12 @@ class AutonomousABKPolicy(nn.Module):
 
     @torch.no_grad()
     def _compute_target_key(self, target_imgs: torch.Tensor) -> torch.Tensor:
-        """목표 도안에서 L2-정규화된 Hybrid Conv+Spatial 프로토타입 임베딩 (B, D) 생성."""
+        """
+        목표 도안에서 5,376차원 L2-정규화 Hybrid Visual Prototype Key 생성 -> (B, 5376).
+        - conv_feat: (B, 4096) — Conv4 특징맵 (256 x 4 x 4)을 L2 정규화 (의미/텍스처 성분)
+        - sp_feat  : (B, 1280) — 목표 도안 AvgPool(32x32 + 16x16 = 1024 + 256) L2 정규화 (공간 배치 성분)
+        - 최종 결합: k = normalize([w_conv * conv_feat; w_sp * sp_feat]) (기본 0.5 : 1.0 -> 에너지 20% : 80%)
+        """
         if target_imgs.dim() == 3:
             tgt = target_imgs.unsqueeze(1)
         elif target_imgs.dim() == 4 and target_imgs.shape[1] == 2:
@@ -1159,18 +1179,23 @@ class AutonomousABKPolicy(nn.Module):
 
         was_training = self.encoder.training
         self.encoder.eval()
+        # 캔버스 채널을 0으로 고정하고 목표 도안만 넣어 초기 관찰 obs0: (B, 2, 128, 128) 구성
         obs0 = torch.cat([torch.zeros_like(tgt), tgt], dim=1)
-        conv_map = self._conv_spatial_trunk(obs0)
+        conv_map = self._conv_spatial_trunk(obs0)  # (B, 256, 8, 8)
         conv_feat = F.normalize(
             F.adaptive_avg_pool2d(conv_map, (4, 4)).flatten(1), p=2, dim=-1
-        )
-        p32 = F.avg_pool2d(tgt, kernel_size=4, stride=4)
-        p32 = F.avg_pool2d(p32, kernel_size=3, stride=1, padding=1).flatten(1)
-        p16 = F.avg_pool2d(tgt, kernel_size=8, stride=8).flatten(1)
-        sp_feat = F.normalize(torch.cat([p32, p16], dim=1), p=2, dim=-1)
+        )  # (B, 4096)
+        p32 = F.avg_pool2d(tgt, kernel_size=4, stride=4)  # (B, 1, 32, 32)
+        p32 = F.avg_pool2d(p32, kernel_size=3, stride=1, padding=1).flatten(1)  # (B, 1024)
+        p16 = F.avg_pool2d(tgt, kernel_size=8, stride=8).flatten(1)  # (B, 256)
+        sp_feat = F.normalize(torch.cat([p32, p16], dim=1), p=2, dim=-1)  # (B, 1280)
         if was_training and not self._freeze_backbone:
             self.encoder.train()
-        return F.normalize(torch.cat([conv_feat * 0.5, sp_feat * 1.0], dim=1), p=2, dim=-1)
+        return F.normalize(
+            torch.cat([conv_feat * self.key_conv_weight, sp_feat * self.key_spatial_weight], dim=1),
+            p=2,
+            dim=-1,
+        )
 
     @torch.no_grad()
     def refresh_slot_key(self, slot_idx: int, target_imgs: torch.Tensor) -> None:
@@ -1328,22 +1353,24 @@ class AutonomousABKPolicy(nn.Module):
         if upto_slot == 1:
             return cp0, pen0, w_all
 
+        # Select-then-Blend: 각 슬롯 s=1..S-1의 선택된 모드 출력을 직전 가중 기저 위에 잔차 누적
         for s in range(1, upto_slot):
             w_prior = F.softmax(
                 torch.matmul(q, self.slot_keys[:s].t()) / max(1e-6, self.temperature), dim=-1
-            )
-            base_cp = torch.sum(w_prior.unsqueeze(-1).unsqueeze(-1) * torch.stack(slot_cps, dim=1), dim=1)
-            base_pen = torch.sum(w_prior.unsqueeze(-1) * torch.stack(slot_pens, dim=1), dim=1)
-            dp, dpn, ss = self.slots[s](cond)
+            )  # (B, s)
+            base_cp = torch.sum(w_prior.unsqueeze(-1).unsqueeze(-1) * torch.stack(slot_cps, dim=1), dim=1)  # (B, M, 2)
+            base_pen = torch.sum(w_prior.unsqueeze(-1) * torch.stack(slot_pens, dim=1), dim=1)  # (B, H)
+            dp, dpn, ss = self.slots[s](cond)  # dp: (B, K, M, 2), dpn: (B, K, H), ss: (B, K)
             dcp, dpen = self._select_slot_mode(dp, dpn, ss, mode=mode, temp=temp)
             cp_s, pen_s = self.slots[s].compose_residual(base_cp, base_pen, dcp, dpen)
             slot_cps.append(cp_s)
             slot_pens.append(pen_s)
 
+        # 전체 슬롯 출력에 대한 Softmax 라우팅 가중 평균: P = sum_s w_s * P_s
         final_cp = torch.sum(
             w_all.unsqueeze(-1).unsqueeze(-1) * torch.stack(slot_cps, dim=1), dim=1
-        ).clamp(0.0, 1.0)
-        final_pen = torch.sum(w_all.unsqueeze(-1) * torch.stack(slot_pens, dim=1), dim=1)
+        ).clamp(0.0, 1.0)  # (B, M, 2)
+        final_pen = torch.sum(w_all.unsqueeze(-1) * torch.stack(slot_pens, dim=1), dim=1)  # (B, H)
         return final_cp, final_pen, w_all
 
     def loss(
@@ -1438,16 +1465,27 @@ class AutonomousABKPolicy(nn.Module):
 
     @torch.no_grad()
     def predict(
-        self, obs: torch.Tensor, state: torch.Tensor, mode: str = "best", temp: float = 0.0
+        self,
+        obs: torch.Tensor,
+        state: torch.Tensor,
+        mode: str = "best",
+        temp: float = 0.0,
+        routing_mode: Optional[str] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """task_id 없이 Select-then-Blend 자율 라우팅 추론 (정적 타깃 키 캐시 가속)."""
-        tgt = obs[:, 1:2]
+        """task_id 없이 자율 라우팅 추론 (Select-then-Blend 또는 Hard Argmax, 정적 타깃 키 캐시 가속)."""
+        rmode = self.routing_mode if routing_mode is None else routing_mode
+        if rmode not in ("blend", "argmax"):
+            raise ValueError(f"Unsupported routing_mode: {rmode}")
+
+        tgt = obs[:, 1:2]  # (B, 1, 128, 128) 목표 도안 채널만 추출
         upto_slot = len(self.slots)
+        # 에피소드 내 정적 목표 이미지가 동일하면 키 추출/유사도 연산 1회만 수행 (캐시 히트)
         if self._cached_target_img is not None and torch.equal(tgt, self._cached_target_img):
             q = self._cached_target_key
             w_all = self._cached_w_all
         else:
-            q = self._compute_target_key(tgt)
+            q = self._compute_target_key(tgt)  # (B, 5376)
+            # Softmax 라우팅 가중치: w_all = softmax(<q, K_0..S-1> / T) -> (B, S)
             w_all = F.softmax(
                 torch.matmul(q, self.slot_keys[:upto_slot].t()) / max(1e-6, self.temperature), dim=-1
             )
@@ -1455,15 +1493,24 @@ class AutonomousABKPolicy(nn.Module):
             self._cached_target_key = q
             self._cached_w_all = w_all
 
-        cond = self._encode_cond(obs, state)
+        cond = self._encode_cond(obs, state)  # (B, cond_dim = 256+64+15)
+        if rmode == "argmax":
+            # Hard Argmax 라우팅: 최고 유사도 슬롯 j* 까지만 잔차 prefix 계산 후 단독 선택 (off-diagonal 혼입 0%)
+            top_slot = w_all.argmax(dim=-1)
+            active_limit = int(top_slot.max().item()) + 1
+        else:
+            # Select-then-Blend 라우팅: 전체 슬롯 0..S-1 가중합
+            top_slot = None
+            active_limit = upto_slot
+
         slot_cps, slot_pens = [], []
         p0, pn0, s0 = self.slots[0](cond)
         cp0, pen0 = self._select_slot_mode(p0, pn0, s0, mode=mode, temp=temp)
         slot_cps.append(cp0)
         slot_pens.append(pen0)
 
-        if upto_slot > 1:
-            for s in range(1, upto_slot):
+        if active_limit > 1:
+            for s in range(1, active_limit):
                 w_prior = F.softmax(
                     torch.matmul(q, self.slot_keys[:s].t()) / max(1e-6, self.temperature), dim=-1
                 )
@@ -1475,10 +1522,17 @@ class AutonomousABKPolicy(nn.Module):
                 slot_cps.append(cp_s)
                 slot_pens.append(pen_s)
 
-        final_cp = torch.sum(
-            w_all.unsqueeze(-1).unsqueeze(-1) * torch.stack(slot_cps, dim=1), dim=1
-        ).clamp(0.0, 1.0)
-        final_pen = torch.sum(w_all.unsqueeze(-1) * torch.stack(slot_pens, dim=1), dim=1)
+        stacked_cp = torch.stack(slot_cps, dim=1)
+        stacked_pen = torch.stack(slot_pens, dim=1)
+        if rmode == "argmax":
+            b_idx = torch.arange(obs.shape[0], device=obs.device)
+            final_cp = stacked_cp[b_idx, top_slot].clamp(0.0, 1.0)
+            final_pen = stacked_pen[b_idx, top_slot]
+        else:
+            final_cp = torch.sum(
+                w_all.unsqueeze(-1).unsqueeze(-1) * stacked_cp, dim=1
+            ).clamp(0.0, 1.0)
+            final_pen = torch.sum(w_all.unsqueeze(-1) * stacked_pen, dim=1)
         pred_traj = self.bspline_decoder(final_cp)
         return final_cp, pred_traj, torch.sigmoid(final_pen)
 
