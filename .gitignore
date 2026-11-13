@@ -10,16 +10,22 @@ CLAUDE.md
 
 # Original player data, checkpoints, caches and generated artifacts
 /data/
-/outputs/
+/outputs/*
+!/outputs/autonomous_cl_benchmark.json
+!/outputs/autonomous_*.png
+/outputs/*_raw_unorder_backup.png
 /backups/
 *.pth
+!/outputs/autonomous_model_d_final.pth
 *.pt
 *.npz
 *.log
 *.sqlite*
 
-# Local backend and monitoring tools (kept private)
-tools/
+# Local backend and monitoring tools (kept private, except B-spline core modules)
+tools/*
+!tools/bspline_core.py
+!tools/bspline_augment.py
 db.py
 api_core.py
 collect_common.py
@@ -35,4 +41,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 scratch/
+scratch_*.py
+scratch_*.png
 

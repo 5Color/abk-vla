@@ -79,6 +79,134 @@ def normalize_stroke_order(traj: np.ndarray) -> np.ndarray:
     return np.concatenate(bracketed).astype(np.float32)
 
 
+def classify_cat_stroke(stroke: np.ndarray):
+    """고양이(cat) 획을 시맨틱 파트별로 분류 (외곽선 -> 좌/우 눈 -> 코/입 -> 좌/우 수염)."""
+    cx, cy = stroke[:, :2].mean(axis=0)
+    dx = stroke[:, 0].max() - stroke[:, 0].min()
+    dy = stroke[:, 1].max() - stroke[:, 1].min()
+
+    # 1. 머리 외곽선 (전체 윤곽): 넓은 bounding box
+    if dx > 0.25 and dy > 0.25:
+        return 0, 0.0, "OUTLINE"
+
+    # 2. 외곽선 분할 구간 (귀 끝, 턱 등 얼굴 영역 바깥 경계)
+    is_outer = (cy < 0.38) or (cy > 0.70) or ((cx < 0.26 or cx > 0.74) and (cy < 0.48 or cy > 0.66))
+    if is_outer:
+        return 0, float(cy), "OUTLINE_SEG"
+
+    # 3. 눈: 눈 영역 내부 콤팩트 루프
+    if 0.40 <= cy <= 0.55 and dx < 0.22 and dy < 0.22:
+        if cx < 0.50:
+            return 1, float(cx), "LEFT_EYE"
+        else:
+            return 2, float(cx), "RIGHT_EYE"
+
+    # 4. 수염: 뺨 양측 수평 방향 획 (dy가 작고 dx가 큼)
+    if 0.52 <= cy <= 0.68:
+        if cx < 0.42 and (dx > dy or dy < 0.08):
+            return 4, float(cy), "LEFT_WHISKER"
+        if cx > 0.58 and (dx > dy or dy < 0.08):
+            return 5, float(cy), "RIGHT_WHISKER"
+
+    # 5. 코 및 입: 중앙 하단
+    if 0.54 <= cy <= 0.70 and 0.40 <= cx <= 0.60:
+        return 3, float(cy), "NOSE_MOUTH"
+
+    # Fallback
+    if cy < 0.52:
+        return (1 if cx < 0.5 else 2), float(cx), "EYE_FALLBACK"
+    elif 0.40 <= cx <= 0.60:
+        return 3, float(cy), "NOSE_MOUTH_FALLBACK"
+    else:
+        return (4 if cx < 0.5 else 5), float(cy), "WHISKER_FALLBACK"
+
+
+def get_stroke_signed_area(pts: np.ndarray) -> float:
+    """화면 좌표계(x 우측, y 하단)에서 획의 부호 있는 면적(Shoelace formula) 계산.
+    화면 좌표계 기준 시계 방향(CW)은 면적 > 0, 반시계 방향(CCW)은 면적 < 0.
+    """
+    x, y = pts[:, 0], pts[:, 1]
+    return float(0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+def canonicalize_cat_stroke_direction(stroke: np.ndarray, part_name: str) -> np.ndarray:
+    """획 그리기 방향 통일 (눈/폐곡선: 12시 방향 시작 + 시계방향 CW, 수염: 뺨 안쪽 -> 바깥쪽, 코/입: 위 -> 아래)."""
+    s = stroke.copy()
+    # 머리 외곽선은 시연자들의 자연스러운 턱 시작점(0.33, 0.71)과 시계 방향을 그대로 보존 (귀 12시 롤링 금지)
+    if "OUTLINE" in part_name:
+        return s
+
+    dx = s[:, 0].max() - s[:, 0].min()
+    dy = s[:, 1].max() - s[:, 1].min()
+    close_dist = np.linalg.norm(s[0, :2] - s[-1, :2])
+    is_closed = ("EYE" in part_name) or ("NOSE" in part_name and close_dist < 0.25 * max(dx, dy, 1e-4) and len(s) >= 8)
+
+    if is_closed:
+        # 1. 시계 방향(Clockwise) 통일: 면적이 음수(CCW)이면 점열 반전
+        area = get_stroke_signed_area(s[:, :2])
+        if area < 0:
+            s = s[::-1]
+        # 2. 항상 최상단(12시 방향, y 최소점)에서 시작하도록 롤링
+        min_y_idx = int(np.argmin(s[:, 1]))
+        if min_y_idx > 0:
+            s = np.roll(s, -min_y_idx, axis=0)
+        # 3. 폐곡선 끝점과 시작점 위치 일치 보정
+        s[-1, :2] = s[0, :2]
+        return s
+
+    if "LEFT_WHISKER" in part_name:
+        # 뺨(x ~ 0.40)에서 좌측 끝(x ~ 0.20)으로: x 감소 방향
+        if s[0, 0] < s[-1, 0]:
+            s = s[::-1]
+    elif "RIGHT_WHISKER" in part_name:
+        # 뺨(x ~ 0.60)에서 우측 끝(x ~ 0.80)으로: x 증가 방향
+        if s[0, 0] > s[-1, 0]:
+            s = s[::-1]
+    elif "NOSE_MOUTH" in part_name:
+        # 코에서 입으로: y 증가 방향 (위 -> 아래)
+        if s[0, 1] > s[-1, 1]:
+            s = s[::-1]
+    return s
+
+
+def canonicalize_cat_trajectory(traj: np.ndarray) -> np.ndarray:
+    """고양이 궤적을 표준 순서(외곽선 -> 좌/우 눈 -> 코/입 -> 좌/우 수염)로 재정렬."""
+    runs = pen_down_runs(traj)
+    if len(runs) <= 1:
+        return traj.copy()
+
+    classified = []
+    for r_idx, (a, b) in enumerate(runs):
+        stroke = traj[a:b].copy()
+        part_id, sub_key, name = classify_cat_stroke(stroke)
+        stroke = canonicalize_cat_stroke_direction(stroke, name)
+        classified.append((part_id, sub_key, stroke))
+
+    # 표준 순서 정렬
+    classified.sort(key=lambda item: (item[0], item[1]))
+
+    out_traj = []
+    for i, (part_id, sub_key, stroke) in enumerate(classified):
+        stroke[:, 2] = 1.0
+        if i == 0:
+            p0 = stroke[0].copy()
+            p0[2] = 0.0
+            out_traj.append(p0[None, :])
+        else:
+            prev_end = out_traj[-1][-1].copy()
+            curr_start = stroke[0].copy()
+            f0 = prev_end.copy(); f0[2] = 0.0
+            f1 = 0.5 * (prev_end + curr_start); f1[2] = 0.0
+            f2 = curr_start.copy(); f2[2] = 0.0
+            out_traj.append(np.stack([f0, f1, f2], axis=0))
+        out_traj.append(stroke)
+
+    last_p = out_traj[-1][-1].copy()
+    last_p[2] = 0.0
+    out_traj.append(last_p[None, :])
+    return np.concatenate(out_traj, axis=0).astype(np.float32)
+
+
 def resample_trajectory(traj: np.ndarray, step: float) -> np.ndarray:
     """같은 pen 상태가 이어지는 구간마다 호 길이 `step` 간격으로 균일 재샘플.
 
@@ -173,7 +301,8 @@ class Episode:
 
 def load_episode(path: Path, resample_step: float | None = None, obs_size: int = OBS_SIZE,
                  width_px: float = STROKE_WIDTH_PX, supersample: int = SUPERSAMPLE,
-                 normalize_strokes: bool = False) -> Episode:
+                 normalize_strokes: bool = False,
+                 canonicalize_cat: bool = False) -> Episode:
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
     traj = np.asarray(d["trajectory"], dtype=np.float32)
@@ -181,12 +310,16 @@ def load_episode(path: Path, resample_step: float | None = None, obs_size: int =
         raise ValueError(f"trajectory shape {traj.shape}, expected (T, 3)")
     traj[:, :2] = np.clip(traj[:, :2], 0.0, 1.0)
     traj[:, 2] = (traj[:, 2] > 0.5).astype(np.float32)
-    if normalize_strokes:
+
+    target_name = str(d.get("meta", {}).get("target") or path.stem.split("_")[1])
+    if canonicalize_cat and target_name == "cat":
+        traj = canonicalize_cat_trajectory(traj)
+    elif normalize_strokes:
         traj = normalize_stroke_order(traj)
+
     if resample_step:
         traj = resample_trajectory(traj, resample_step)
 
-    target_name = str(d.get("meta", {}).get("target") or path.stem.split("_")[1])
     target = decode_png_gray(d["target_128_png"], obs_size)
     browser = decode_png_gray(d["canvas_128_png"], obs_size) if d.get("canvas_128_png") else None
 
@@ -208,6 +341,7 @@ class DrawingVLADataset(Dataset):
                        (예: 1/256 ≈ 0.004 → 128 관측에서 0.5px 간격)
         targets: 특정 도안만 사용 (예: ["apple", "cat"])
         normalize_strokes: True이면 로드할 때만 획 순서·방향을 좌표 기준으로 통일 (기본 False)
+        canonicalize_cat: True이면 cat 도안의 획 순서를 표준 정규 순서로 정렬 (기본 False)
     """
 
     def __init__(
@@ -221,12 +355,14 @@ class DrawingVLADataset(Dataset):
         stroke_width_px: float = STROKE_WIDTH_PX,
         supersample: int = SUPERSAMPLE,
         normalize_strokes: bool = False,
+        canonicalize_cat: bool = False,
     ):
         self.chunk_size = chunk_size
         self.obs_size = obs_size
         self.stroke_width_px = stroke_width_px
         self.supersample = supersample
         self.normalize_strokes = normalize_strokes
+        self.canonicalize_cat = canonicalize_cat
         paths = sorted(Path(root).glob("demo_*.json")) if files is None else [Path(f) for f in files]
         keep = set(targets) if targets else None
 
@@ -234,7 +370,8 @@ class DrawingVLADataset(Dataset):
         for p in paths:
             try:
                 ep = load_episode(p, resample_step, obs_size, stroke_width_px, supersample,
-                                  normalize_strokes=normalize_strokes)
+                                  normalize_strokes=normalize_strokes,
+                                  canonicalize_cat=canonicalize_cat)
             except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
                 warnings.warn(f"skip {p.name}: {e}")
                 continue

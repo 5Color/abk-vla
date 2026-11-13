@@ -1,167 +1,138 @@
-# Drawing-VLA: Closed-Loop Visuomotor Action Chunking for Interactive Multi-Stroke Sketch Generation from Crowdsourced Demonstrations
+# ABK-VLA: Task-ID-Free Continual Visuomotor Policy Learning via Autonomous B-Spline Knot Compression
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24122154.svg)](https://doi.org/10.5281/zenodo.24122154)
-[![Live Benchmark](https://img.shields.io/badge/Live%20Benchmark-Hand%20vs%20AI-success?logo=vercel)](https://handvsai.vercel.app)
-[![Paper](https://img.shields.io/badge/Paper-PDF-red?logo=adobeacrobatreader)](./Drawing_VLA.pdf)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.15.0%2Bxpu-ee4c2c.svg)](https://pytorch.org/)
+[![Continual Learning](https://img.shields.io/badge/Continual%20Learning-Task--ID--Free%20Inference-2ea44f.svg)](#)
+[![Forgetting](https://img.shields.io/badge/Forgetting%20Rate-1.66%25-brightgreen.svg)](#)
+[![Paper](https://img.shields.io/badge/Preprint-PDF-red.svg)](./paper/ABK_VLA_Preprint.pdf)
 
-Official PyTorch implementation and web benchmark platform for the paper:  
-**"Drawing-VLA: Closed-Loop Visuomotor Action Chunking for Interactive Multi-Stroke Sketch Generation from Crowdsourced Demonstrations"**  
-**Author:** Seungjoon Son (sonsjoon715@gmail.com)
+> **Can a lightweight visuomotor policy learn sequential multi-stroke manipulation tasks without catastrophic forgetting, without an experience replay buffer, and without ground-truth `Task-ID` labels at inference time?**
 
-[Paper (PDF)](./Drawing_VLA.pdf) | [Live Benchmark Platform](https://handvsai.vercel.app) | [한국어 문서 (README_KO.md)](./README_KO.md)
+**ABK-VLA (Autonomous B-spline Knot-based Visuomotor Policy)** addresses sequential continual learning in compact closed-loop trajectory control. While massive foundation models dilute forgetting through over-parameterization and large-scale replay, lightweight visuomotor policies suffer severe trajectory collapse (`46.44%–89.33%` forgetting) under sequential fine-tuning.
+
+By compressing $H = 16$ action chunks into $N_k = 6$ **cubic B-spline control knots** and pairing frozen visual-spatial backbone representations (`4.59M` shared parameters) with lightweight residual Winner-Take-All (WTA) slot heads (`0.33M` parameters per residual slot, `7.16%` of the backbone, `94.44%` total model frozen at $T_3$) and **task-ID-free visual prototype routing (`Select-then-Blend`, $T = 0.05$)**, ABK-VLA achieves **`99.98%` average diagonal routing confidence (`4/4` slot match on canonical targets)**, **`1.66%` forgetting rate**, and **`85.59%` average final $F_1$** across a 4-task sequential benchmark (`apple → sprout → star → cat`)—recovering **`92.1%` of the external-`Task-ID` Oracle baseline (`92.96%`)** without any replay data or test-time task labels.
+
+*(For the earlier Phase 1 closed-loop ACT baseline and crowdsourced web benchmark, see [`paper/main.tex`](./paper/main.tex) and [`Drawing_VLA.pdf`](./Drawing_VLA.pdf).)*
 
 ---
 
-## Overview
+## 1. Visual Highlights
 
-Autoregressive sequence models for vector sketch generation (e.g., SketchRNN) typically operate open-loop, predicting sequential coordinate displacements blind to the actual rendered canvas state. Consequently, they suffer from compounding trajectory drift and stroke collapse during multi-stroke transitions.
+### Qualitative 5-Model Rollout Comparison (`apple → sprout → star → cat`)
+After sequentially learning all four tasks, naive fine-tuning baselines (`Model 1`, `Model 2`) collapse on earlier tasks, and experience replay (`Model 3`) degrades on complex multi-part geometry (`Cat` $F_1 = 25.9\%$). **Autonomous ABK-VLA (`Model 5`)** preserves structural fidelity across all four tasks without external test-time task labels.
 
-**Drawing-VLA** reformulates 2D canvas sketching as a closed-loop robot end-effector manipulation task. Using an architecture inspired by Action Chunking with Transformers (ACT), the agent observes a 2-channel visual canvas state (accumulated ink + target template) alongside pen proprioception and discrete task tokens, predicting a chunk of $K = 16$ future trajectory waypoints in a receding-horizon manner.
+![5-Model Continual Learning Rollout Grid](outputs/autonomous_cl_rollout_grid.png)
 
-### Live Closed-Loop Visuomotor Rollouts (Autonomous Agent Generation)
-
-| Guided Tracing: Apple (3 strokes) | Multi-Stroke Decoupling: Sprout (4 strokes) |
+### Sequential $F_1$ Retention Heatmaps & Task-ID-Free Visual Routing Matrix
+| Sequential $F_1$ Retention Across 4 Tasks | Task-ID-Free Softmax Routing ($T = 0.05$) |
 | :---: | :---: |
-| <img src="./paper/figures/rollout_apple.gif" width="360" alt="Drawing-VLA Apple Rollout" /> | <img src="./paper/figures/rollout_sprout.gif" width="360" alt="Drawing-VLA Sprout Rollout" /> |
-
-*Figure: Real-time closed-loop visuomotor rollouts predicted by the unified Drawing-VLA policy ($K=16$ action chunks, temporal ensembling, Catmull-Rom spline brush rendering). The agent coordinates visual canvas feedback and pen proprioception to transition cleanly across multi-stroke contours without compounding drift.*
-
-### Closed-Loop Rollout vs. Single-Step Baseline
-![Figure 1: Rollout Comparison](./paper/figures/fig1_rollout_comparison.png)
-*Figure 1: Closed-loop Action Chunking (Drawing-VLA) vs. Single-Step Markovian Visuomotor Baseline. Action Chunking resolves multimodal trajectory mode averaging and cleanly decouples multi-stroke trajectories on Apple (3 strokes) and Sprout (4 strokes).*
-
-| Evaluation Metric | Single-Step Markovian Baseline (`v5b`) | Drawing-VLA (ACT, Ours) | Theoretical Cause / Mechanism |
-| :--- | :---: | :---: | :--- |
-| **Game Score (/100)** | 87.2 (A-Tier) | **99.9 (S-Tier)** | Resolves trajectory drift & compounding errors |
-| **Contour Coverage** | 94.1% | **100.0%** | Full boundary exploration without early termination |
-| **Trajectory Precision** | 83.4% | **100.0%** | Receding-horizon temporal ensembling ($q=6$) |
-| **Harmonic F1 Score** | 0.884 | **1.000** | Strict dual-tolerance geometric alignment |
-| **Bidirectional SDF Error** | 4.80 px | **1.20 px** | Sub-pixel contour tracking accuracy |
-| **Stroke Decoupling** | **Failed** (1 tangled stroke) | **Solved** (3 discrete strokes) | Overcomes single-step mode averaging ($w_{\text{up}} = 10.0$) |
-| **Trajectory Termination** | Time-limit cutoff | **Clean Stop** (708 steps) | Coherent multi-step horizon planning ($K=16$) |
-
-> [!NOTE]
-> **Why the Single-Step Baseline Fails: A Structural Proof, Not a Parameter Deficit**  
-> The single-step baseline (`MLP Baseline (v5b)`) is not an under-tuned strawman—it shares the **exact same convolutional visual encoder backbone** and dual-channel canvas inputs as Drawing-VLA. Its failure stems from the fundamental mathematical limitation of **Markovian single-step behavioral cloning under multimodal human demonstrations**:
-> 1. **Mode Averaging across Divergent Demonstrations:** When human demonstrations diverge (e.g., drawing clockwise vs. counter-clockwise, or transitioning to stem vs. body), a single-step Markovian policy averages conflicting velocity vectors. This gradient cancellation forces the pen into an artificial mean trajectory that drags the pen continuously across boundaries. Scaling parameter capacity cannot resolve this causal ambiguity.
-> 2. **Compounding Compounding Drift:** Single-step autoregression accumulates errors quadratically ($O(\epsilon T^2)$) along the trajectory horizon without future waypoint coordination.
-> 3. **The Action Chunking Solution ($K=16, w_{\text{up}}=10.0$):** By predicting a chunk of $K = 16$ future waypoints conditioned on visual canvas state and proprioception, coupled with a $10\times$ minority-class pen-up loss weighting, Drawing-VLA establishes a coherent multi-step planning horizon that decouples discrete stroke transitions cleanly without compounding drift.
-
-### Robustness to Real-Time Spatial Perturbations (+20px Displacement)
-![Figure 4: Perturbation Recovery](./paper/figures/fig4_perturbation_recovery.png)
-*Figure 4: Closed-loop visual feedback enables real-time error recovery when perturbed by an unexpected +20px spatial offset at step $t=150$, smoothly returning to the target contour within 42 steps where an open-loop replay baseline permanently drifts.*
-
-| Policy / Control Regime | Perturbation Offset | Contour Coverage | Trajectory Precision | Harmonic F1 Score | Error Recovery Dynamics |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **Drawing-VLA (Closed-Loop)** | None ($0$ px) | **100.0%** | **100.0%** | **1.000** | Nominal trajectory tracking |
-| **Drawing-VLA (Closed-Loop)** | $+10$ px | 94.9% | 94.1% | 0.945 | Rapid convergence back to contour |
-| **Drawing-VLA (Closed-Loop)** | **$+20$ px** | **86.5%** | **87.5%** | **0.870** | **Recovers within 42 steps** ($1.64$ px error) |
-| **Open-Loop Replay Baseline** | $+20$ px | 43.7% | 40.4% | 0.420 | **Permanent catastrophic drift** (blind to canvas) |
-
-> [!NOTE]
-> **Open-Loop Sequence Models (e.g., SketchRNN) vs. Closed-Loop Visuomotor Control**  
-> Autoregressive vector sequence models predict sequential coordinate offsets $(\Delta x, \Delta y, p_1, p_2, p_3)$ blind to the rendered canvas pixels. Under external spatial perturbations, open-loop replay experiences catastrophic permanent failure ($0.420$ F1). In contrast, Drawing-VLA continuously perceives the visual discrepancy between the accumulated ink $O_t^{(0)}$ and target template $O_t^{(1)}$, achieving exponential error decay back to contour within 42 control steps ($\sim 42.8\text{ ms}$ cumulative inference time).
+| ![5-Model Retention Heatmaps](outputs/autonomous_cl_heatmap.png) | ![Autonomous Routing Matrix](outputs/autonomous_routing_matrix.png) |
 
 ---
 
-## Key Technical Results
+## 2. 5-Model Continual Learning Benchmark
 
-* **Multi-Stroke Decoupling:** Predicts $K = 16$ action chunks paired with an $L_1$ coordinate objective and a $10\times$ minority-class pen-up weighting, achieving 100.0% coverage and 100.0% precision (99.9–100.0/100 S-Tier) on multi-stroke targets.
-* **Dual-Mode Synthesis:** Trained with 50% goal-channel dropout ($p_{\text{drop}} = 0.5$), enabling both guided template tracing and autonomous blank-canvas contour generation (0.887 F1) from memory.
-* **Real-Time Perturbation Recovery:** Smoothly compensates for unexpected $+20\text{px}$ (+0.156 normalized) end-effector shifts within 42 control steps.
-* **Edge Inference Efficiency:** Measures 6.11 ms per chunk (163 chunks/sec) on an Intel Core Ultra 5 325 edge CPU (4 threads), operating comfortably within a 60 Hz (16.67 ms) browser control budget.
-* **Diagnostic Ablation Studies (Paper Section 5.3):**
-  - **Pen-Up Weighting ($w_{\text{up}} = 1.0$ vs. $10.0$):** Lowering $w_{\text{up}}$ to $1.0$ causes continuous pen dragging across stroke boundaries (reproducing the single-step failure), proving that minority-class reweighting is mandatory for discrete stroke decoupling.
-  - **Temporal Ensembling ($q = 1$ vs. $q = 6$):** Disabling receding-horizon ensembling ($q=1$) introduces high-frequency boundary jitter at chunk transitions, whereas $q=6$ temporal smoothing yields seamless $C^1$-continuous spline brush trajectories.
-* **Crowdsourced Flywheel:** 324 verified human trajectories collected via the live gamified web benchmark platform [Hand vs AI](https://handvsai.vercel.app) featuring real-time signed distance field (SDF) scoring, asynchronous 1:1 ghost battles, and an adaptive "Hidden Boss" challenge.
+All five models were evaluated on **Intel(R) Arc Graphics (`xpu`, FP32, PyTorch `2.15.0+xpu`, `seed=42`)** using identical dataset splits (`85%` train / `15%` val by episode), identical curriculum and augmentation schedules (`T0: apple` `10 epochs × 1× aug`, `T1: sprout` `12 epochs × 3× aug`, `T2: star` `12 epochs × 5× aug`, `T3: cat` `16 epochs × 5× aug`, `batch_size=64`, `WeightedRandomSampler` for multi-stroke tasks), identical spatial pointers (`compute_res_cue` + `compute_spatial_pointer`), post-hoc chunk-boundary $C^0/C^1$ continuity smoothing, and rollout parameters (`exec_steps=16`, `max_iters=100`, base `patience=8` dynamically extended to `effective_patience=16` when $>5\%$ target ink remains).
+
+> **Protocol Note on Optimizer & Head Differences:** In `experiments/benchmark_autonomous_cl.py`, `T0` uses `lr=3e-4` for all models; for `T1–T3`, single-mode `Models 1–3` use `lr=3e-4`, whereas slot-isolated 6-mode WTA `Models 4–5` use `lr=1e-3` (`Model 5` `prior_weight` uses `5e-3`). `Model 4` uses `WTASlotHead` (`0.30M`) with cross-entropy gating loss, whereas `Model 5` uses `ResidualWTASlotHead` (`0.33M`) with pointer-conditioned mode selection, focal gating loss, and pen-consistent supervision.
+
+| Evaluation Axis | Metric | Model 1<br>`GRU + Naive FT` | Model 2<br>`ABK + Naive FT` | Model 3<br>`ABK + Replay` | Model 4 (Oracle)<br>`ABK Slots (C)` | **Model 5 (Ours)**<br>**`Autonomous ABK (D)`** |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **Conditions** | **Inference `Task-ID`** | None | None | None | Required (Oracle) | **None (Autonomous)** |
+| | **Replay Buffer** | None | None | `256` samples/task | None | **None (Zero Replay)** |
+| | **Slot Head / Modes** | GRU (`H=16`) | Single-mode MLP | Single-mode MLP | 6-mode WTA (`0.30M`) | **6-mode Residual WTA (`0.33M`)** |
+| **Task Precision** | `Apple (T0)` $F_1 \uparrow$ | 6.5% | 4.7% | 54.4% | **99.7%** | 88.5% |
+| | `Sprout (T1)` $F_1 \uparrow$ | 11.7% | 5.4% | 88.8% | **92.2%** | 81.1% |
+| | `Star (T2)` $F_1 \uparrow$ | 28.7% | 8.3% | 82.4% | 87.1% | **96.4%** |
+| | `Cat (T3)` $F_1 \uparrow$ | 1.6% | 68.0% | 25.9% | **92.9%** | 76.5% |
+| | **Avg Final $F_1 \uparrow$** | 12.12% | 21.61% | 62.87% | **92.96%** | **85.59% (92.1% of Oracle)** |
+| **Continual Learning** | **Forgetting Rate $\downarrow$** | 46.44% | 89.33% | 14.13% | **0.00%** | **1.66% (54.0× vs Naive FT)** |
+| | **Backward Transfer (BWT)** | -46.44% | -89.33% | +1.95% | 0.00% | **-1.66%** |
+| **Geometry & Control** | **Chamfer Distance $\downarrow$** | 0.1043 | 0.0984 | 0.0327 | **0.0098** | **0.0192 (5.4× vs GRU)** |
+| | **Normalized Mean Jerk $\downarrow$** | 5.05 | 5.91 | 5.92 | **3.09** | **3.33** |
+| | **Component Recall $\uparrow$** | 0.0% | 6.3% | 50.0% | **87.5%** | **62.5% (+12.5%p vs Replay)** |
+| **Efficiency** | **Episode Latency $\downarrow$** | 601.6 ms | 108.6 ms | 564.9 ms | 346.6 ms | **464.3 ms (1.30× vs GRU)** |
+| | **T3 Trainable Params** | 5.08M (Full) | 4.72M (Full) | 4.72M (Full) | 0.30M (Slot) | **0.33M (94.44% Frozen)** |
 
 ---
 
-## Repository Structure
+## 3. Core Architectural Mechanisms (`train/bspline_policy.py` & `train/rollout_bspline.py`)
 
+1. **Cubic B-Spline Trajectory Compression (`BSplineDecoder`):**
+   Instead of predicting $H = 16$ raw Cartesian waypoints, each slot predicts $N_k = 6$ sigmoid-bounded control knots $\mathbf{P} \in (0, 1)^{6 \times 2}$ and step-wise pen logits $\mathbf{u} \in \mathbb{R}^{16}$, mapped analytically via a frozen cubic B-spline design matrix $\hat{\mathbf{Y}} = \mathbf{B}\mathbf{P}$. During closed-loop rollout (`rollout_bspline.py`), continuous pen-down transitions apply post-hoc chunk-boundary smoothing ($\hat{\mathbf{y}}_0 \leftarrow \mathbf{p}_{\text{prev}}$ for $C^0$, and $\hat{\mathbf{y}}_1 \leftarrow 0.7\,\hat{\mathbf{y}}_1 + 0.3\,(\mathbf{p}_{\text{prev}} + \mathbf{v}_{\text{prev}})$ when $\cos\alpha > 0$ for $C^1$ tangent continuity), yielding smooth control (`NMJ = 3.33`).
+2. **Thin-Stroke Spatial Pointer & Residual Cue (`compute_spatial_pointer`, `compute_res_cue`):**
+   From the uncovered target residual $\mathbf{M}_{\text{uncov}} = \max(0, \mathbf{I}_{\text{target}} - \mathbf{I}_{\text{canvas}})$, the policy extracts:
+   * A **64-d** $8 \times 8$ adaptive average-pooled residual cue (`compute_res_cue`, scaled by `4.0`).
+   * A **7-d** geometric spatial pointer (`[cx, cy, rem_ratio, dx_center, dy_center, dx_near, dy_near]`), where nearest uncovered pixels are located via a blended salience map `0.7 * uncov + 0.3 * AvgPool3x3(uncov)` (thresholded at `> 0.15`, fallback `> 0.08`) to preserve thin 1 px stems, leaves, and whiskers.
+3. **5,376-d Hybrid Prototype Key & Select-then-Blend Residual Routing (`AutonomousABKPolicy`):**
+   * **Prototype Key (`_compute_target_key`):** Concatenates L2-normalized Conv4 `4×4` pooled features (`4,096-d`, weight `0.5`) with L2-normalized multi-scale target silhouette average pooling (`32×32` smoothed + `16×16` = `1,280-d`, weight `1.0`), followed by final L2 normalization (`5,376-d`).
+   * **Select-then-Blend Inference (`predict`):** Rather than hard `argmax` routing over a single slot, `AutonomousABKPolicy` caches the static target key and softmax routing weights $\mathbf{w}$ ($T = 0.05$) per episode (`reset_cache()`), evaluates all $K$ `ResidualWTASlotHead` modules sequentially with logit-space residual composition (`sigmoid(prior_weight * logit(base_cp) + delta_cp)`), selects the highest-scoring WTA mode within each slot (`argmax` over `sel_head`), and computes a $\mathbf{w}$-weighted average across all slots.
+   * **Routing & Forgetting Trade-off:** On the 4 canonical target templates, diagonal softmax routing weights are **`99.99%` (`Apple`), `100.00%` (`Sprout`), `99.97%` (`Star`), and `99.96%` (`Cat`)** (`99.98%` mean diagonal weight, `4/4` slot match). Because soft Select-then-Blend includes tiny off-diagonal tail weights ($<0.04\%$) from subsequently added residual slots, closed-loop rollout on frozen earlier tasks (`Apple`: `92.48% → 88.46%`, `Star`: `97.30% → 96.36%`) exhibits a slight `1.66%` forgetting rate.
+   * **Episode Latency:** Evaluating all 4 slots with `reset_cache()` yields **`464.3 ms`** per episode (`7.02 ms` per chunk), **`1.30×` faster than `GRU` (`601.6 ms`)** and **`1.22×` faster than `ABK + Replay` (`564.9 ms`)**, while remaining slower than single-slot `Model 4` (`346.6 ms`) and early-stalling `Model 2` (`108.6 ms`).
+4. **Full-Chunk Horizon Alignment (`exec_steps=16`):**
+   Executing the complete $H = 16$ horizon (`exec_steps=16`) prevents premature truncation of pen-up jump trajectories before touchdown on disconnected components.
+
+---
+
+## 4. Scope & Honest Limitations
+
+To ensure transparent scientific interpretation, we explicitly define the operational boundaries of this study:
+* **Goal-Image-Conditioned Benchmark Scope (No Language Conditioning):** In this repository, "ABK-VLA" refers to a compact **goal-image-conditioned** visuomotor action-chunking policy evaluated on a 2D multi-stroke drawing testbed as a controlled benchmark for continual motor control. The current implementation does not include a language encoder or VLM/LLM backbone.
+* **Training Task Boundaries & Static Prototype Keys:** Inference is `Task-ID`-free, but sequential training assumes discrete task boundaries where `register_or_expand_slot(..., thr=0.85)` is invoked per task loader (`max_prior_sim`: `0.351`, `0.491`, `0.593`). Furthermore, the `5,376-d` prototype key devotes $80\%$ of its squared L2 norm to multi-scale pixel pooling, and the `99.98%` routing matrix is measured on the 4 canonical static target templates themselves (self-similarity $= 1.0$) rather than affine-perturbed or noisy OOD target queries.
+* **Linear Slot Scaling & Dynamic Patience Trade-Off:** Because `predict()` evaluates all $K$ slots via Select-then-Blend, inference cost and parameters grow as $O(K)$ (`5.90M` total at $T_3$). Under `base patience=8` (`effective_patience=16` when $>5\%$ target ink remains, with `stale` throttled `1/3` during air flights), long jumps toward thin auxiliary strokes (e.g., apple leaf, sprout stem, cat whiskers) still occasionally hit stall termination (`62.5%` component recall vs. `87.5%` Oracle). All metrics are from a single-seed (`seed=42`) single-order run in `outputs/autonomous_cl_benchmark.json`.
+
+---
+
+## 5. Repository Structure & Quickstart
+
+```text
+abk-vla/
+├── README.md                              # Project overview, benchmark tables, and visual results
+├── paper/
+│   ├── ABK_VLA_Paper.tex                  # Full two-column LaTeX preprint manuscript
+│   ├── ABK_VLA_Preprint.pdf               # Compiled preprint PDF
+│   └── main.tex                           # Phase 1 Drawing-VLA ACT manuscript
+├── train/
+│   ├── bspline_policy.py                  # AutonomousABKPolicy, BSplineModelCPolicy, GRU & MLP baselines
+│   ├── rollout_bspline.py                 # Closed-loop rollout engine, post-hoc C0/C1 & stall patience
+│   └── dataset.py                         # Observation rendering and trajectory utilities
+├── tools/
+│   ├── bspline_core.py                    # Clamped cubic B-spline basis, BVLS fitting, BSplineDecoder
+│   └── bspline_augment.py                 # Equivariant affine/elastic/covariate augmentation & pen loss
+├── experiments/
+│   ├── benchmark_autonomous_cl.py         # 5-model continual learning benchmark runner
+│   └── benchmark_three_models.py          # Shared data loader, device utilities, and 3-model runner
+├── tests/
+│   ├── test_bspline_core.py               # Unit tests for B-spline basis and BVLS fitting
+│   └── test_bspline_policy.py             # Unit tests for policy architectures and loss interfaces
+└── outputs/
+    ├── autonomous_cl_benchmark.json       # Raw 5-model benchmark metrics & routing matrix
+    ├── autonomous_cl_rollout_grid.png     # 4x5 qualitative rollout comparison grid
+    ├── autonomous_cl_heatmap.png          # 5-model F1 retention heatmaps
+    ├── autonomous_routing_matrix.png      # 4x4 Task-ID-free softmax routing matrix
+    ├── autonomous_model_d_rollout.png     # Model D standalone rollout grid
+    └── autonomous_model_d_final.pth       # Trained 4-task AutonomousABKPolicy checkpoint
 ```
-drawing-vla/
-├── train/              # Visuomotor policy architectures, training, and closed-loop rollout
-│   ├── policies.py     # ACT (Transformer) and Convolutional baseline policy models
-│   ├── dataset.py      # Dual-channel observation rendering and trajectory sampling
-│   ├── train_policy.py # Policy training pipeline (CUDA / Intel XPU / CPU)
-│   ├── rollout_eval.py # Closed-loop evaluation engine with receding-horizon ensembling
-│   └── brush.py        # Organic Catmull-Rom spline and pressure brush renderer
-├── scoring.py          # Exact grid-indexed contour matching and dual-tolerance scoring
-├── templates.json      # Standard benchmark drawing vector templates (12 targets)
-├── targets_128.json    # Pre-rendered 128×128 standard target canvas tensors
-├── paper/              # LaTeX source, benchmark figures, and perturbation results
-├── tests/              # Test suite (scoring, policy rollouts, dataset, brush)
-└── Drawing_VLA.pdf     # Full paper PDF
-```
 
----
-
-## Quick Start
-
-### 1. Requirements and Setup
-
-The benchmark and evaluation scripts run with minimal dependencies. For training and evaluating visuomotor policies:
-
+### Run the 5-Model Continual Learning Benchmark
 ```bash
-git clone https://github.com/5Color/drawing-vla.git
-cd drawing-vla
-pip install -r requirements.txt
+python experiments/benchmark_autonomous_cl.py \
+  --tasks apple sprout star cat \
+  --epochs-t0 10 \
+  --epochs-slot 12 \
+  --batch-size 64 \
+  --max-iters 100 \
+  --exec-steps 16 \
+  --seed 42
 ```
 
-### 2. Live Interactive Benchmark Platform
-Try the live interactive benchmark and test your drawing skills against the AI agent in real time:
-- **Web App:** [https://handvsai.vercel.app](https://handvsai.vercel.app) *(Stylus, Apple Pencil, mouse, and touch supported)*
-
-### 3. Run Test Suite
-Execute the test suite to verify scoring algorithms, observation tensors, and policy architectures:
+### Re-Run Model D Only (Updating `outputs/autonomous_cl_benchmark.json`)
 ```bash
-python -m unittest tests.test_scoring_b tests.test_brush tests.test_dataset tests.test_rollout tests.test_training
+python experiments/benchmark_autonomous_cl.py \
+  --only-model-d \
+  --tasks apple sprout star cat \
+  --exec-steps 16 \
+  --num-modes 6 \
+  --temperature 0.05 \
+  --novelty-threshold 0.85
 ```
-
-### 4. Training and Closed-Loop Rollout
-
-Pretrained model checkpoints are hosted on [GitHub Releases v1.0.0](https://github.com/5Color/drawing-vla/releases/tag/v1.0.0). Rollout evaluation works out of the box using the bundled `targets_128.json` templates—no external dataset download is required:
-
-```bash
-# 1) Download pretrained ACT policy checkpoint
-mkdir -p outputs
-curl -L -o outputs/apple_vla_policy.pth https://github.com/5Color/drawing-vla/releases/download/v1.0.0/apple_vla_policy.pth
-
-# 2) Evaluate closed-loop rollout with temporal ensembling and organic brush rendering
-python train/rollout_eval.py --ckpt outputs/apple_vla_policy.pth --exec-steps 12 --ensemble --brush
-
-# 3) (Optional) Verify dataset pipeline (uses synthetic demo if data/raw is empty)
-python train/dataset.py --resample-step 0.004
-
-# 4) (Optional) Train unified dual-mode ACT policy on your own data/raw/demo_<target>_*.json episodes
-python train/train_policy.py --head transformer --epochs 60 --goal-drop 0.5
-```
-
-> [!NOTE]
-> **Dataset Availability:** Raw crowdsourced human demonstrations are not bundled in the public repository to protect contributor privacy. Pretrained checkpoints, scoring/rendering utilities, and canonical 128×128 target tensors (`targets_128.json`) are all included for full rollout reproduction, and `train/train_policy.py` trains directly on any demonstration JSONs placed in `data/raw/` following the schema in `train/dataset.py`.
-
----
-
-## Citation
-
-If you find this work or code useful in your research, please cite:
-
-```bibtex
-@article{son2026drawingvla,
-  title={Drawing-VLA: Closed-Loop Visuomotor Action Chunking for Interactive Multi-Stroke Sketch Generation from Crowdsourced Demonstrations},
-  author={Son, Seungjoon},
-  journal={arXiv preprint},
-  year={2026},
-  doi={10.5281/zenodo.24122154},
-  url={https://doi.org/10.5281/zenodo.24122154}
-}
-```
-
----
-
-## License
-
-This project is licensed under the [MIT License](./LICENSE).
