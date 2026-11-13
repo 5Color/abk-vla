@@ -88,10 +88,17 @@ To ensure transparent scientific interpretation, we explicitly define the operat
 ```text
 abk-vla/
 ├── README.md                              # Project overview, benchmark tables, and visual results
+├── requirements.txt                       # Core Python dependencies (torch, numpy, scipy, pillow, matplotlib)
 ├── paper/
 │   ├── ABK_VLA_Paper.tex                  # Full two-column LaTeX preprint manuscript
 │   ├── ABK_VLA_Preprint.pdf               # Compiled preprint PDF
 │   └── main.tex                           # Phase 1 Drawing-VLA ACT manuscript
+├── data/
+│   └── bspline/                           # Preprocessed 4-task B-spline datasets (H=16, Nk=6, stride=8)
+│       ├── bspline_vla_dataset_apple_m6_h16_s8.npz
+│       ├── bspline_vla_dataset_sprout_m6_h16_s8.npz
+│       ├── bspline_vla_dataset_star_m6_h16_s8.npz
+│       └── bspline_vla_dataset_cat_m6_h16_s8.npz
 ├── train/
 │   ├── bspline_policy.py                  # AutonomousABKPolicy, BSplineModelCPolicy, GRU & MLP baselines
 │   ├── rollout_bspline.py                 # Closed-loop rollout engine, post-hoc C0/C1 & stall patience
@@ -112,6 +119,11 @@ abk-vla/
     ├── autonomous_routing_matrix.png      # 4x4 Task-ID-free softmax routing matrix
     ├── autonomous_model_d_rollout.png     # Model D standalone rollout grid
     └── autonomous_model_d_final.pth       # Trained 4-task AutonomousABKPolicy checkpoint
+```
+
+### Installation
+```bash
+pip install -r requirements.txt
 ```
 
 ### Run the 5-Model Continual Learning Benchmark
