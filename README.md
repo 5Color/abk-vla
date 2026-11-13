@@ -5,6 +5,7 @@
 [![Continual Learning](https://img.shields.io/badge/Continual%20Learning-Task--ID--Free%20Inference-2ea44f.svg)](#)
 [![Forgetting](https://img.shields.io/badge/Forgetting%20Rate-1.66%25-brightgreen.svg)](#)
 [![Paper](https://img.shields.io/badge/Preprint-PDF-red.svg)](./paper/ABK_VLA_Preprint.pdf)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24208545.svg)](https://doi.org/10.5281/zenodo.24208545)
 
 > **Can a lightweight visuomotor policy learn sequential multi-stroke manipulation tasks without catastrophic forgetting, without an experience replay buffer, and without ground-truth `Task-ID` labels at inference time?**
 
