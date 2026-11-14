@@ -7,7 +7,7 @@
 [![Paper](https://img.shields.io/badge/Preprint-PDF-red.svg)](./paper/ABK_VLA_Preprint.pdf)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24208545.svg)](https://doi.org/10.5281/zenodo.24208545)
 
-> **Follow-up Architecture (DTRA):** Our standalone successor scaling to 8 continual 3D Meta-World tasks with \$O(1)\$ CPU inference and Elastic Snap-Back of Hypertube Rings is published at **[https://github.com/5Color/dtra](https://github.com/5Color/dtra)**.
+> **Follow-up Architecture (DTRA):** Our standalone successor scaling to 8 continual 3D Meta-World tasks with $`O(1)`$ CPU inference and Elastic Snap-Back of Hypertube Rings is published at **[https://github.com/5Color/dtra](https://github.com/5Color/dtra)**.
 
 > **Can a lightweight visuomotor policy learn sequential multi-stroke manipulation tasks without catastrophic forgetting, without an experience replay buffer, and without ground-truth `Task-ID` labels at inference time?**
 
