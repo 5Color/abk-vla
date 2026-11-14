@@ -97,7 +97,7 @@ To stress-test every theoretical and empirical claim under strict continual lear
 
 ### Meta-World 3D Continual Manipulation Summary (`outputs/exp4_metaworld_cl.json`)
 
-| Method | Test-Time `Task-ID`? | Replay? | Final Avg SR (↑) | FR (↓) | BWT (↑) | Autonomous Routing (No `Task-ID`) | Total Params |
+| Method | Test-Time `Task-ID`? | Replay? | Final Avg SR $\uparrow$ | FR $\downarrow$ | BWT $\uparrow$ | Autonomous Routing (No `Task-ID`) | Total Params |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Naive FT (1-Head B-Spline) | Not Used | No | 43.3% | 75.6% | -75.6% | — | 1.60M |
 | Experience Replay (256/task) | Not Used | Yes | 88.3% | 13.3% | -13.3% | — | 1.60M |
@@ -111,8 +111,8 @@ To stress-test every theoretical and empirical claim under strict continual lear
 
 To ensure transparent scientific interpretation, we explicitly define the operational boundaries of this study:
 * **Goal-Image / Visual-Only Conditioning & Simulation Testbeds:** In this repository, "ABK-VLA" denotes a compact **vision-and-proprioception** visuomotor action-chunking policy validated on a 2D multi-stroke drawing testbed and a 3D Meta-World (`MuJoCo`) continual manipulation benchmark (Experiments 1–4). The current implementation does not include a language encoder/VLM backbone or physical hardware validation.
-* **Training Task Boundaries & Key Sensitivity Under Extreme OOD Shifts:** Inference is `Task-ID`-free, though sequential training invokes `register_or_expand_slot` at discrete task boundaries. Experiment 1 confirms `100.0%` routing accuracy up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%), while closed-loop OOD rollout F1 drops under stronger target corruptions (`65.04%` at 4 px shift, `29.55%` at `sigma=0.15` noise). In 3D Meta-World, static tabletop background dominance required subtracting a 15×15 local average (DoG residual) and using 8 initial-frame exemplars per slot (`threshold=0.996`).
-* **Linear $O(K)$ Slot Scaling & Blend-vs-Argmax Trade-Off:** Parameters grow linearly (`0.33M`/slot in 2D, `5.90M` total at $T_3$; `0.19M`/slot in 3D, `2.19M` total at $T_3$). Experiment 3 confirms that switching from `Select-then-Blend` (`T=0.05`) to `hard_argmax` eliminates the residual tail-weight forgetting (`1.66%` → `0.00%` FR) at the cost of a minor `-1.20 pp` transfer reduction (`84.39%` vs. `85.59%` F1).
+* **Training Task Boundaries, OOD Sensitivity & Narrow 3D Margin:** Inference is `Task-ID`-free, though sequential training invokes `register_or_expand_slot` at discrete task boundaries. Experiment 1 confirms `100.0%` routing accuracy up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%), while closed-loop OOD rollout F1 drops under stronger target corruptions (`65.04%` at 4 px shift, `29.55%` at `sigma=0.15` noise). In 3D Meta-World, subtracting a 15×15 local average (DoG residual) and using 8 initial-frame exemplars (`T=0.003`, `threshold=0.996`) yields a raw $T_3$ cosine margin of `0.0168` (`0.9792` vs. `0.996`) and assumes distinct initial ($t=0$) scene layouts.
+* **Linear $O(K)$ Slot Chaining & Blend-vs-Argmax Trade-Off:** Both slot memory (`0.33M`/slot in 2D, `5.90M` total at $T_3$; `0.19M`/slot in 3D, `2.19M` total at $T_3$) and sequential residual chaining scale linearly as $O(K)$, even under `hard_argmax`. Experiment 3 confirms that switching from `Select-then-Blend` (`T=0.05`) to `hard_argmax` eliminates the residual tail-weight forgetting (`1.66%` → `0.00%` FR; standalone latency `387.8 ms` → `357.5 ms`) at the cost of a minor `-1.20 pp` transfer reduction (`84.39%` vs. `85.59%` F1).
 
 ---
 
@@ -123,10 +123,11 @@ abk-vla/
 ├── README.md                              # Project overview, benchmark tables, and visual results
 ├── requirements.txt                       # Core Python dependencies (+ optional 3D Meta-World packages)
 ├── .zenodo.json                           # Zenodo DOI archival metadata (Son, Seungjoon / MIT)
-├── RELEASE_NOTES_v1.1.2.md                # Release notes draft for GitHub Release v1.1.2
+├── RELEASE_NOTES_v1.1.2.md                # Release notes for GitHub Release v1.1.2
+├── RELEASE_NOTES_v1.1.3.md                # Release notes for GitHub Release v1.1.3
 ├── paper/
 │   ├── ABK_VLA_Paper.tex                  # Full two-column LaTeX preprint manuscript
-│   ├── ABK_VLA_Preprint.pdf               # Compiled preprint PDF
+│   ├── ABK_VLA_Preprint.pdf               # Compiled 9-page OpenType preprint PDF
 │   └── main.tex                           # Phase 1 Drawing-VLA ACT manuscript
 ├── data/
 │   └── bspline/                           # Preprocessed 4-task B-spline datasets (H=16, Nk=6, stride=8)

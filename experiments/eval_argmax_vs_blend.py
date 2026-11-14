@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -110,8 +111,59 @@ def eval_policy_mode(
     }
 
 
+def plot_exp3(results: Dict[str, dict]) -> Path:
+    """저장된 Experiment 3 결과 딕셔너리를 기반으로 비교 막대 그래프를 생성합니다."""
+    labels = list(results.keys())
+    avg_f1s = [results[k]["avg_final_f1"] * 100 for k in labels]
+    frs = [results[k]["forgetting_rate"] * 100 for k in labels]
+    lats = [results[k]["avg_episode_infer_ms"] for k in labels]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), dpi=200)
+    fig.patch.set_facecolor("#F8FAFC")
+    x = np.arange(len(labels))
+    colors = ["#64748B", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#16A34A"]
+
+    axes[0].bar(x, avg_f1s, color=colors)
+    axes[0].set_title("Average Final F1 (%) ↑", fontweight="bold", pad=8)
+    axes[0].set_ylim(0, 105)
+    for i, v in enumerate(avg_f1s):
+        axes[0].text(i, v + 1.5, f"{v:.2f}%", ha="center", va="bottom", fontsize=8.5)
+
+    axes[1].bar(x, frs, color=colors)
+    axes[1].set_title("Forgetting Rate (%) ↓", fontweight="bold", pad=8)
+    axes[1].set_ylim(0, max(frs) * 1.18)
+    for i, v in enumerate(frs):
+        axes[1].text(i, v + 1.4, f"{v:.2f}%", ha="center", va="bottom", fontsize=8.5)
+
+    axes[2].bar(x, lats, color=colors)
+    axes[2].set_title("Episode Latency (ms) ↓", fontweight="bold", pad=8)
+    axes[2].set_ylim(0, max(lats) * 1.18)
+    for i, v in enumerate(lats):
+        axes[2].text(i, v + 12, f"{v:.1f}", ha="center", va="bottom", fontsize=8.5)
+
+    for ax in axes:
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=22, ha="right", fontsize=8.5)
+        ax.grid(axis="y", alpha=0.3)
+
+    plt.suptitle("Experiment 3: Select-then-Blend Temperature Sweep vs. Hard Argmax Routing", fontweight="bold")
+    plt.tight_layout()
+    return safe_savefig(OUT_DIR / "exp3_argmax_vs_blend.png")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Experiment 3: Blend vs. Hard Argmax routing evaluation")
+    parser.add_argument("--plot-only", action="store_true", help="Re-generate figure from outputs/exp3_argmax_vs_blend.json")
+    args = parser.parse_args()
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_json = OUT_DIR / "exp3_argmax_vs_blend.json"
+    if args.plot_only:
+        payload = json.loads(out_json.read_text(encoding="utf-8"))
+        saved_png = plot_exp3(payload["configs"])
+        print(f"[Plot-Only] Regenerated {saved_png} from {out_json}")
+        return
+
     set_seed(42)
     device = pick_device()
 
@@ -168,49 +220,12 @@ def main() -> None:
             f"CR={out['avg_component_recall']*100:5.1f}% | Lat={out['avg_episode_infer_ms']:5.1f}ms | F1={f1s}"
         )
 
-    out_json = OUT_DIR / "exp3_argmax_vs_blend.json"
     out_json.write_text(
         json.dumps({"tasks": tasks, "r_diag": r_diag, "configs": results}, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
-    # Visualization
-    labels = list(results.keys())
-    avg_f1s = [results[k]["avg_final_f1"] * 100 for k in labels]
-    frs = [results[k]["forgetting_rate"] * 100 for k in labels]
-    lats = [results[k]["avg_episode_infer_ms"] for k in labels]
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), dpi=160)
-    fig.patch.set_facecolor("#F8FAFC")
-    x = np.arange(len(labels))
-    colors = ["#64748B", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#16A34A"]
-
-    axes[0].bar(x, avg_f1s, color=colors)
-    axes[0].set_title("Average Final F1 (%) ↑", fontweight="bold")
-    axes[0].set_ylim(min(avg_f1s) - 5, 100)
-    for i, v in enumerate(avg_f1s):
-        axes[0].text(i, v + 0.6, f"{v:.2f}%", ha="center", fontsize=8)
-
-    axes[1].bar(x, frs, color=colors)
-    axes[1].set_title("Forgetting Rate (%) ↓", fontweight="bold")
-    axes[1].set_ylim(0, max(frs) + 3.0)
-    for i, v in enumerate(frs):
-        axes[1].text(i, v + 0.2, f"{v:.2f}%", ha="center", fontsize=8)
-
-    axes[2].bar(x, lats, color=colors)
-    axes[2].set_title("Episode Latency (ms) ↓", fontweight="bold")
-    axes[2].set_ylim(0, max(lats) * 1.18)
-    for i, v in enumerate(lats):
-        axes[2].text(i, v + 8, f"{v:.1f}", ha="center", fontsize=8)
-
-    for ax in axes:
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=25, ha="right", fontsize=8)
-        ax.grid(axis="y", alpha=0.3)
-
-    plt.suptitle("Experiment 3: Select-then-Blend Temperature Sweep vs. Hard Argmax Routing", fontweight="bold")
-    plt.tight_layout()
-    saved_png = safe_savefig(OUT_DIR / "exp3_argmax_vs_blend.png")
+    saved_png = plot_exp3(results)
     print(f"\n[Done] Saved {out_json} and {saved_png}")
 
 
