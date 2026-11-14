@@ -45,7 +45,7 @@ To address both barriers in a controlled goal-image-conditioned motor benchmark,
 \begin{itemize}
     \item \textbf{Compact B-Spline Parameter Isolation:} By representing $H=16$ continuous action chunks via $N_k=6$ cubic B-spline control knots, each new residual WTA slot requires $0.33\text{M}$ trainable parameters ($7.16\%$ of the $4.59\text{M}$ shared visual-state backbone), keeping $94.44\%$ of total model parameters frozen by $T_3$.
     \item \textbf{Task-ID-Free Visual Prototype Routing (Select-then-Blend):} During inference, ABK-VLA caches a $5{,}376$-dimensional hybrid Conv4-and-spatial target key per episode (\texttt{reset\_cache()}), computes temperature-scaled cosine similarity weights ($T=0.05$) without task-specific branching, and blends sequential residual slot outputs, achieving $99.98\%$ mean diagonal routing confidence across canonical target templates.
-    \item \textbf{Horizon Alignment \& Post-Hoc Continuity:} Executing full $H=16$ chunks ($\text{exec\_steps}=16$) preserves pen-up jump landings across disconnected strokes, while post-hoc chunk-boundary $C^0/C^1$ smoothing yields low-jerk trajectories ($\text{NMJ}=3.33$).
+    \item \textbf{Horizon Alignment \& Post-Hoc Continuity:} Executing full $H=16$ chunks (\texttt{exec\_steps}=16) preserves pen-up jump landings across disconnected strokes, while post-hoc chunk-boundary $C^0/C^1$ smoothing yields low-jerk trajectories ($\mathrm{NMJ}=3.33$).
 \end{itemize}
 
 \section{Related Work}
@@ -100,7 +100,7 @@ Rather than hard \texttt{argmax} routing over a single slot, ABK-VLA executes \t
 \section{Experimental Setup}
 
 \subsection{5-Model Continual Learning Protocol}
-All experiments were conducted on Intel(R) Arc Graphics (\texttt{xpu}, FP32, PyTorch \texttt{2.15.0+xpu}, \texttt{seed=42}) across four sequential multi-stroke drawing tasks: $T_0(\text{apple}) \rightarrow T_1(\text{sprout}) \rightarrow T_2(\text{star}) \rightarrow T_3(\text{cat})$. Models~1--5 share identical episode-level train/val splits ($85\% / 15\%$), identical affine/elastic/covariate-shift augmentation schedules ($T_0$: $10\text{ epochs} \times 1\times$; $T_1$: $12\text{ epochs} \times 3\times$; $T_2$: $12\text{ epochs} \times 5\times$; $T_3$: $16\text{ epochs} \times 5\times$; batch size $64$; \texttt{WeightedRandomSampler} with $2.0\times$ secondary-stroke and $2.5\times$ jump-chunk weights on multi-stroke tasks), identical spatial pointers, post-hoc $C^0/C^1$ smoothing, and identical rollout parameters ($\text{exec\_steps}=16$, $\text{max\_iters}=100$, base $\text{patience}=8$, dynamically extended to $\text{effective\_patience}=16$ when $>5\%$ target ink remains, with stale accumulation throttled $1/3$ during air flights):
+All experiments were conducted on Intel(R) Arc Graphics (\texttt{xpu}, FP32, PyTorch \texttt{2.15.0+xpu}, \texttt{seed=42}) across four sequential multi-stroke drawing tasks: $T_0(\text{apple}) \rightarrow T_1(\text{sprout}) \rightarrow T_2(\text{star}) \rightarrow T_3(\text{cat})$. Models~1--5 share identical episode-level train/val splits ($85\% / 15\%$), identical affine/elastic/covariate-shift augmentation schedules ($T_0$: $10\text{ epochs} \times 1\times$; $T_1$: $12\text{ epochs} \times 3\times$; $T_2$: $12\text{ epochs} \times 5\times$; $T_3$: $16\text{ epochs} \times 5\times$; batch size $64$; \texttt{WeightedRandomSampler} with $2.0\times$ secondary-stroke and $2.5\times$ jump-chunk weights on multi-stroke tasks), identical spatial pointers, post-hoc $C^0/C^1$ smoothing, and identical rollout parameters (\texttt{exec\_steps}=16, \texttt{max\_iters}=100, base \texttt{patience}=8, dynamically extended to \texttt{effective\_patience}=16 when $>5\%$ target ink remains, with stale accumulation throttled $1/3$ during air flights):
 \begin{enumerate}
     \item \textbf{Model 1 (GRU + Naive FT):} Autoregressive $(x, y, p)$ GRUCell baseline trained sequentially at $\text{lr}=3\times 10^{-4}$ without isolation or replay.
     \item \textbf{Model 2 (ABK + Naive FT):} Single-mode B-spline MLP policy trained sequentially at $\text{lr}=3\times 10^{-4}$ with $\text{pen\_up\_weight}=2.0$ BCE.
@@ -193,14 +193,14 @@ Aligning $\text{exec\_steps}=16$ to the full $H=16$ spline horizon preserves pen
 To rigorously stress-test routing invariance, stochastic seed variance, tail-weight forgetting, and 3D transfer, we conducted four additional controlled benchmarks.
 
 \paragraph{Experiment 1: Perturbation Routing Robustness and Key Weight Ablation.}
-We evaluated top-1 routing accuracy across 80 held-out perturbed queries per severity level (20 draws $\times$ 4 tasks) under five $(w_{\text{conv}}, w_{\text{sp}})$ key energy mixtures (\texttt{Spatial-Only} 0/100, \texttt{ABK Default} 20/80, \texttt{Balanced} 50/50, \texttt{Conv4-Heavy} 80/20, and \texttt{Conv4-Only} 100/0) and measured closed-loop rollout F1 under representative out-of-distribution (OOD) target corruptions (Fig.~\ref{fig:exp1_perturb}). The default 20/80 hybrid key maintains \textbf{100.0\%} routing accuracy up to $\pm 8$\,px translation, $\pm 15^\circ$ rotation, $\pm 15\%$ scale, $\sigma = 0.40$ Gaussian noise, and 20\% block occlusion (\textbf{92.5\%} at 40\% occlusion). Weighting Conv4 semantics (\texttt{Balanced} 50/50) lifts $\pm 12$\,px shift accuracy from 83.8\% to \textbf{90.0\%} (and \texttt{Conv4-Only} reaches 100.0\% at $\pm 12$\,px), whereas spatial pooling anchors invariance under noise (100.0\% vs.\ 50.0\% at $\sigma=0.40$) and occlusion (92.5\% vs.\ 70.0\% at 40\%). Under closed-loop OOD rollouts, Blend/Argmax retain 85.59\%/84.39\% clean, 65.04\%/56.97\% at 4\,px shift, 72.78\%/72.59\% at $8^\circ$ rotation, 29.55\%/22.49\% at $\sigma=0.15$ noise, and 42.48\%/42.85\% at 20\% occlusion.
+We evaluated top-1 routing accuracy across 80 held-out perturbed queries per severity level (20 draws $\times$ 4 tasks) under five $(w_{\text{conv}}, w_{\text{sp}})$ key energy mixtures (\texttt{Spatial-Only} 0/100, \texttt{ABK Default} 20/80, \texttt{Balanced} 50/50, \texttt{Conv4-Heavy} 80/20, and \texttt{Conv4-Only} 100/0) and measured closed-loop rollout F1 under representative out-of-distribution (OOD) target corruptions (Fig.~\ref{fig:exp1_perturb}). The default 20/80 hybrid key maintains \textbf{100.0\%} routing accuracy up to $\pm 8$\,px translation, $\pm 15^\circ$ rotation, $\pm 15\%$ scale, $\sigma = 0.40$ Gaussian noise, and 20\% block occlusion (\textbf{92.5\%} at 40\% occlusion). Weighting Conv4 semantics (\texttt{Balanced} 50/50) lifts $\pm 12$\,px shift accuracy from 83.8\% to \textbf{90.0\%} (and \texttt{Conv4-Only} reaches 100.0\% at $\pm 12$\,px), whereas spatial pooling anchors invariance under noise (100.0\% vs.\ 50.0\% at $\sigma=0.40$) and occlusion (92.5\% vs.\ 70.0\% at 40\%). Under closed-loop OOD rollouts, Blend/Argmax retain 85.59\%/84.39\% clean, 65.04\%/56.97\% at 4\,px shift, 72.78\%/72.59\% at $8^\circ$ rotation, 29.55\%/22.49\% at $\sigma=0.15$ noise, and 42.48\%/42.85\% at 20\% occlusion. Notably, this reveals a clean decoupling between prototype routing and policy decoding: while the router still selects the exact slot with 100.0\% accuracy under 4\,px shifts and $\sigma=0.15$ noise, the frozen Conv4 visual encoder (which receives the target channel without sensor-noise augmentation during $T_0$ training) under-tracks fine pixel contours once $\mathbf{I}_{\text{target}}$ is heavily corrupted.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{../outputs/exp1_routing_perturbation.png}
+\includegraphics[width=0.95\textwidth]{../outputs/exp1_routing_perturbation.png}
 \caption{\textbf{Experiment 1: Target Perturbation Routing Curves and Key Weight Ablation.} Hybrid Conv4+Spatial pooling balances spatial shift tolerance with noise, rotation, and occlusion invariance.}
 \label{fig:exp1_perturb}
-\end{figure}
+\end{figure*}
 
 \paragraph{Experiment 2: Multi-Seed ($n=3$) and Task-Order Robustness.}
 We trained and evaluated Autonomous ABK-VLA across three seeds ($\{42, 43, 44\}$) on both \textbf{Forward} ($\text{apple}\rightarrow\text{sprout}\rightarrow\text{star}\rightarrow\text{cat}$) and \textbf{Reverse} ($\text{cat}\rightarrow\text{star}\rightarrow\text{sprout}\rightarrow\text{apple}$) curricula (Table~\ref{tab:exp2_seed}, Fig.~\ref{fig:exp2_seed}). Across all six runs (24 task-slot transitions), autonomous novelty detection expanded with \textbf{99.98\%} routing diagonal confidence. Forward Select-then-Blend reaches $85.15 \pm 1.06\%$ F1 ($0.61 \pm 0.74\%$ FR), while Hard Argmax guarantees strictly $0.00 \pm 0.00\%$ FR at $84.58 \pm 1.14\%$ F1. Under Reverse ordering (starting from the complex multi-stroke \texttt{cat} task), forgetting remains near zero ($0.06 \pm 0.06\%$ Blend, $0.00 \pm 0.00\%$ Argmax).
@@ -225,15 +225,15 @@ Reverse & Hard Argmax & 78.16 $\pm$ 5.53\% & \textbf{0.00 $\pm$ 0.00\%} & 0.0285
 }
 \end{table}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{../outputs/exp2_multiseed_order.png}
+\includegraphics[width=0.92\textwidth]{../outputs/exp2_multiseed_order.png}
 \caption{\textbf{Experiment 2: Multi-Seed Forward vs.\ Reverse Task Order.} Error bars show std across seeds $\{42,43,44\}$; Hard Argmax eliminates forgetting in every seed and ordering.}
 \label{fig:exp2_seed}
-\end{figure}
+\end{figure*}
 
 \paragraph{Experiment 3: Select-then-Blend Temperature Sweep vs.\ Hard Argmax.}
-To verify the exact source of the remaining 1.66\% forgetting in the seed-42 benchmark, we re-evaluated the exact final checkpoint across softmax temperatures $T \in \{0.01, 0.05, 0.10, 0.25, 0.50\}$ and \texttt{hard\_argmax} (Table~\ref{tab:exp3_blend}, Fig.~\ref{fig:exp3_blend}). Switching strictly to \texttt{hard\_argmax} drops forgetting from \textbf{1.66\% to 0.00\%} and reduces episode latency from \textbf{387.8\,ms to 357.5\,ms}, proving that all remaining drift arose exclusively from tiny off-diagonal residual weights ($<0.04\%$) rather than parameter corruption. Conversely, tuned soft blending ($T=0.05$) yields a $+1.20$\,pp net positive transfer boost on final F1 (85.59\% vs.\ 84.39\%, reaching 76.46\% vs.\ 66.69\% on \texttt{cat}), while over-smoothing ($T \ge 0.25$) collapses performance (FR $>78\%$).
+To verify the exact source of the remaining 1.66\% forgetting in the seed-42 benchmark, we re-evaluated the exact final checkpoint across softmax temperatures $T \in \{0.01, 0.05, 0.10, 0.25, 0.50\}$ and \texttt{hard\_argmax} (Table~\ref{tab:exp3_blend}, Fig.~\ref{fig:exp3_blend}). Switching strictly to \texttt{hard\_argmax} drops forgetting from \textbf{1.66\% to 0.00\%} and reduces standalone episode latency from \textbf{387.8\,ms to 357.5\,ms}, proving that all remaining drift arose exclusively from tiny off-diagonal residual weights ($<0.04\%$) rather than parameter corruption. Conversely, tuned soft blending ($T=0.05$) yields a $+1.20$\,pp net positive transfer boost on final F1 (85.59\% vs.\ 84.39\%, reaching 76.46\% vs.\ 66.69\% on \texttt{cat}), while over-smoothing ($T \ge 0.25$) collapses performance (FR $>78\%$). Note on latency comparison: Table~\ref{tab:main_benchmark} reports $464.3\text{ ms}$ timed inline during the full 5-model sequential training-and-evaluation benchmark (\texttt{benchmark\_autonomous\_cl.py}), whereas Table~\ref{tab:exp3_blend} profiles the saved \texttt{autonomous\_model\_d\_final.pth} checkpoint in standalone isolation (\texttt{eval\_argmax\_vs\_blend.py}), giving apples-to-apples timing between \texttt{Blend (T=0.05)} ($387.8\text{ ms}$) and \texttt{Hard Argmax} ($357.5\text{ ms}$); lower episode times at $T \ge 0.25$ ($167.4\text{ ms}$ and $242.8\text{ ms}$) reflect premature rollout stall termination under severe trajectory collapse rather than compute speedup.
 
 \begin{table}[t]
 \centering
@@ -257,15 +257,15 @@ Blend ($T=0.50$) & 5.21\% & 84.33\% & 0.1288 & 0.0\% & 242.8 \\
 }
 \end{table}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{../outputs/exp3_argmax_vs_blend.png}
+\includegraphics[width=0.95\textwidth]{../outputs/exp3_argmax_vs_blend.png}
 \caption{\textbf{Experiment 3: Softmax Temperature Sweep vs.\ Hard Argmax.} Hard Argmax strictly enforces 0.00\% FR, while $T=0.05$ Blend trades 1.66\% drift for higher forward transfer.}
 \label{fig:exp3_blend}
-\end{figure}
+\end{figure*}
 
 \paragraph{Experiment 4: 3D Meta-World Continual Manipulation Generalization.}
-We ported the identical architecture---cubic B-spline chunking ($H=16 \rightarrow N_k=6$ across 4-DoF EEF+gripper actions, exec horizon 8), frozen Conv4+state trunk (91.45\% frozen at Task 3), logit-space Residual WTA slots, and autonomous prototype routing---to a 4-task Meta-World MuJoCo benchmark (\texttt{button-press-v3} $\rightarrow$ \texttt{door-open-v3} $\rightarrow$ \texttt{window-open-v3} $\rightarrow$ \texttt{faucet-open-v3}; 30 demos/task on seeds 0--34, 15 unseen initializations/task on seeds 35--49). Because static tabletop camera frames (\texttt{corner}, $128\times 128$ RGB) share $\sim$80\% background pixels, we subtract a $15\times 15$ local average (DoG-like high-pass residual) before spatial pooling and store $M_{\text{ex}}=8$ initial-frame exemplars per slot ($7,936$-d key, $T=0.003$, threshold $0.996$). Across all held-out evaluation seeds (Table~\ref{tab:exp4_mw}, Fig.~\ref{fig:exp4_mw}), Autonomous 3D ABK-VLA achieves \textbf{100.0\%} zero-Task-ID routing accuracy (99.71\% diagonal confidence), \textbf{0.0\%} forgetting, and \textbf{91.7\%} final average success rate (\textbf{+11.1\% BWT}), outperforming Naive FT (43.3\% SR, 75.6\% FR), 256-chunk Experience Replay (88.3\% SR, 13.3\% FR), and even Oracle Task-ID Slots (90.0\% SR, 0.0\% FR), while Hard Argmax attains 86.7\% SR with 0.0\% FR.
+We ported the identical architecture---cubic B-spline chunking ($H=16 \rightarrow N_k=6$ across 4-DoF EEF+gripper actions, exec horizon 8), frozen Conv4+state trunk (91.45\% frozen at Task 3), logit-space Residual WTA slots, and autonomous prototype routing---to a 4-task Meta-World MuJoCo benchmark (\texttt{button-press-v3} $\rightarrow$ \texttt{door-open-v3} $\rightarrow$ \texttt{window-open-v3} $\rightarrow$ \texttt{faucet-open-v3}; 30 demos/task on seeds 0--34, 15 unseen initializations/task on seeds 35--49). Because static tabletop camera frames (\texttt{corner}, $128\times 128$ RGB) share $\sim$80\% background pixels, raw spatial keys saturate above $0.99$ across distinct tasks; subtracting a $15\times 15$ local average (DoG-like high-pass residual) before spatial pooling and storing $M_{\text{ex}}=8$ initial-frame exemplars per slot ($7,936$-d key, $T=0.003$, threshold $0.996$) sharply separates task transitions ($\max$ prior similarity rising cleanly from $0.8143 \rightarrow 0.9592 \rightarrow 0.9792$). Across all 60 held-out evaluation episodes (Table~\ref{tab:exp4_mw}, Fig.~\ref{fig:exp4_mw}), Autonomous 3D ABK-VLA achieves \textbf{100.0\%} autonomous routing accuracy without test-time \texttt{Task-ID} labels (99.71\% diagonal confidence), \textbf{0.0\%} forgetting, and \textbf{91.7\%} final average success rate (\textbf{+11.1\% BWT}), outperforming Naive FT (43.3\% SR, 75.6\% FR), 256-chunk Experience Replay (88.3\% SR, 13.3\% FR), and even Oracle Task-ID Slots (90.0\% SR, 0.0\% FR), while Hard Argmax attains 86.7\% SR with 0.0\% FR. Notably, in 3D manipulation, \texttt{Blend}'s $+11.1\%$ positive backward transfer stems from \texttt{window-open-v3} improving from $40.0\%$ immediately after $T_2$ to $73.3\%$ after acquiring lateral turning kinematics on $T_3$ (\texttt{faucet-open-v3}).
 
 \begin{table}[t]
 \centering
@@ -288,12 +288,12 @@ Autonomous 3D ABK (Argmax) & No & 86.7\% & \textbf{0.0\%} & +0.0\% \\
 }
 \end{table}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{../outputs/exp4_metaworld_cl.png}
-\caption{\textbf{Experiment 4: Meta-World 3D Continual Manipulation.} Without test-time Task-ID or replay, Autonomous 3D ABK-VLA achieves 100.0\% routing accuracy, 0.0\% FR, and 91.7\% Avg SR.}
+\includegraphics[width=0.86\textwidth]{../outputs/exp4_metaworld_cl.png}
+\caption{\textbf{Experiment 4: Meta-World 3D Continual Manipulation.} Without test-time \texttt{Task-ID} or replay, Autonomous 3D ABK-VLA achieves 100.0\% autonomous routing accuracy, 0.0\% FR, and 91.7\% Avg SR.}
 \label{fig:exp4_mw}
-\end{figure}
+\end{figure*}
 
 \section{Scope, Limitations, and Future Work}
 We explicitly state four scope boundaries of this study:
@@ -305,7 +305,7 @@ We explicitly state four scope boundaries of this study:
 \end{enumerate}
 
 \section{Conclusion}
-ABK-VLA demonstrates that pairing cubic B-spline trajectory compression with logit-space residual WTA slots and visual prototype routing enables compact visuomotor policies to eliminate catastrophic forgetting without replay buffers or test-time \texttt{Task-ID} supervision---achieving $85.59\%$ $F_1$ ($1.66\%$ FR) / $84.39\%$ $F_1$ ($0.00\%$ FR via \texttt{hard\_argmax}) in 2D continual drawing across 3 seeds and reverse task orders, and transferring directly to 3D Meta-World manipulation at $91.7\%$ average success rate, $0.0\%$ forgetting, $+11.1\%$ backward transfer, and $100.0\%$ held-out routing accuracy.
+ABK-VLA demonstrates that pairing cubic B-spline trajectory compression with logit-space residual WTA slots and visual prototype routing enables compact visuomotor policies to eliminate catastrophic forgetting without replay buffers or test-time \texttt{Task-ID} supervision---achieving $85.59\%$ $F_1$ ($1.66\%$ FR) / $84.39\%$ $F_1$ ($0.00\%$ FR via \texttt{hard\_argmax}) in 2D continual drawing across 3 seeds and reverse task orders, and transferring directly to 3D Meta-World manipulation at $91.7\%$ average success rate, $0.0\%$ forgetting, $+11.1\%$ backward transfer, and $100.0\%$ autonomous routing accuracy without test-time \texttt{Task-ID}.
 
 \begin{thebibliography}{9}
 \bibitem{kirkpatrick2017} J. Kirkpatrick et al., ``Overcoming catastrophic forgetting in neural networks,'' \textit{PNAS}, vol. 114, no. 13, pp. 3521--3526, 2017.

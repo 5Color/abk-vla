@@ -69,7 +69,7 @@ All five models were evaluated on **Intel(R) Arc Graphics (`xpu`, FP32, PyTorch 
    * **Prototype Key (`_compute_target_key`):** Concatenates L2-normalized Conv4 `4×4` pooled features (`4,096-d`, weight `0.5`) with L2-normalized multi-scale target silhouette average pooling (`32×32` smoothed + `16×16` = `1,280-d`, weight `1.0`), followed by final L2 normalization (`5,376-d`).
    * **Select-then-Blend Inference (`predict`):** Rather than hard `argmax` routing over a single slot, `AutonomousABKPolicy` caches the static target key and softmax routing weights $\mathbf{w}$ ($T = 0.05$) per episode (`reset_cache()`), evaluates all $K$ `ResidualWTASlotHead` modules sequentially with logit-space residual composition (`sigmoid(prior_weight * logit(base_cp) + delta_cp)`), selects the highest-scoring WTA mode within each slot (`argmax` over `sel_head`), and computes a $\mathbf{w}$-weighted average across all slots.
    * **Routing & Forgetting Trade-off:** On the 4 canonical target templates, diagonal softmax routing weights are **`99.99%` (`Apple`), `100.00%` (`Sprout`), `99.97%` (`Star`), and `99.96%` (`Cat`)** (`99.98%` mean diagonal weight, `4/4` slot match). Because soft Select-then-Blend includes tiny off-diagonal tail weights ($<0.04\%$) from subsequently added residual slots, closed-loop rollout on frozen earlier tasks (`Apple`: `92.48% → 88.46%`, `Star`: `97.30% → 96.36%`) exhibits a slight `1.66%` forgetting rate.
-   * **Episode Latency:** Evaluating all 4 slots with `reset_cache()` yields **`464.3 ms`** per episode (`7.02 ms` per chunk), **`1.30×` faster than `GRU` (`601.6 ms`)** and **`1.22×` faster than `ABK + Replay` (`564.9 ms`)**, while remaining slower than single-slot `Model 4` (`346.6 ms`) and early-stalling `Model 2` (`108.6 ms`).
+   * **Episode Latency:** Evaluating all 4 slots with `reset_cache()` yields **`464.3 ms`** per episode (`7.02 ms` per chunk) inside the 5-model sequential training-and-evaluation benchmark (`benchmark_autonomous_cl.py`, Table 1)—**`1.30×` faster than `GRU` (`601.6 ms`)** and **`1.22×` faster than `ABK + Replay` (`564.9 ms`)**, while remaining slower than single-slot `Model 4` (`346.6 ms`) and early-stalling `Model 2` (`108.6 ms`). *(Note: When re-evaluating the saved checkpoint `outputs/autonomous_model_d_final.pth` standalone in `Exp 3`, `Blend T=0.05` runs at `387.8 ms` vs `357.5 ms` for `Hard Argmax` under identical standalone timing conditions.)*
 4. **Full-Chunk Horizon Alignment (`exec_steps=16`):**
    Executing the complete $H = 16$ horizon (`exec_steps=16`) prevents premature truncation of pen-up jump trajectories before touchdown on disconnected components.
 
@@ -81,10 +81,10 @@ To stress-test every theoretical and empirical claim under strict continual lear
 
 | Experiment | Script | Key Verified Result | Figure |
 | :--- | :--- | :--- | :---: |
-| **Exp 1: OOD Routing & Key Ablation** | [`experiments/eval_routing_perturbation.py`](experiments/eval_routing_perturbation.py) | Hybrid key (`0.5·Conv4 + 1.0·Spatial`) keeps **100.0%** routing up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%); balanced 50/50 reaches **90.0%** at ±12 px. | [Perturbation Curve](outputs/exp1_routing_perturbation.png) |
+| **Exp 1: OOD Routing & Key Ablation** | [`experiments/eval_routing_perturbation.py`](experiments/eval_routing_perturbation.py) | Hybrid key (`0.5·Conv4 + 1.0·Spatial`) keeps **100.0%** routing up to ±8 px shift, ±15° rotation, ±15% scale, `sigma=0.40` noise, and 20% occlusion (`92.5%` at 40%); balanced 50/50 reaches **90.0%** at ±12 px. *(Closed-loop OOD F1: `65.04%` Blend / `56.97%` Argmax at 4 px shift, `72.78%` / `72.59%` at 8° rot, `29.55%` / `22.49%` at `sigma=0.15` noise.)* | [Perturbation Curve](outputs/exp1_routing_perturbation.png) |
 | **Exp 2: 3-Seed & Task-Order Robustness** | [`experiments/benchmark_multiseed_order.py`](experiments/benchmark_multiseed_order.py) | Across seeds `{42, 43, 44}`, **Forward** achieves `85.15 ± 1.06%` F1 (`FR = 0.61 ± 0.74%`) under Blend and `84.58 ± 1.14%` (`FR = 0.00 ± 0.00%`) under Argmax; **Reverse** achieves `79.50 ± 4.97%` (`FR = 0.06 ± 0.06%`) vs `78.16 ± 5.53%` (`FR = 0.00 ± 0.00%`). | [Multi-Seed Order](outputs/exp2_multiseed_order.png) |
-| **Exp 3: Select-then-Blend vs Hard Argmax** | [`experiments/eval_argmax_vs_blend.py`](experiments/eval_argmax_vs_blend.py) | Switching the same checkpoint to `hard_argmax` eliminates the residual tail-weight forgetting completely (**FR: 1.66% → 0.00%**, Latency **387.8 ms → 357.5 ms**) while Default Blend (`T=0.05`) preserves slightly higher transfer (`85.59%` vs `84.39%` F1). | [Argmax vs Blend](outputs/exp3_argmax_vs_blend.png) |
-| **Exp 4: 3D Meta-World Manipulation** | [`experiments/benchmark_metaworld_cl.py`](experiments/benchmark_metaworld_cl.py) | Ported directly to 4-DoF 3D MuJoCo manipulation (`button-press-v3 -> door-open-v3 -> window-open-v3 -> faucet-open-v3`) with 128×128 RGB + 4-d EEF & DoG+Conv4 key: **91.7% Avg SR / 0.0% FR / +11.1% BWT** (100.0% held-out Task-ID routing) vs Naive FT `43.3% / 75.6% FR`, Replay `88.3% / 13.3% FR`, Oracle Task-ID `90.0%`. | [Meta-World 3D CL](outputs/exp4_metaworld_cl.png) |
+| **Exp 3: Select-then-Blend vs Hard Argmax** | [`experiments/eval_argmax_vs_blend.py`](experiments/eval_argmax_vs_blend.py) | On saved checkpoint `outputs/autonomous_model_d_final.pth`, switching to `hard_argmax` eliminates residual tail-weight forgetting completely (**FR: 1.66% → 0.00%**, standalone Latency **387.8 ms → 357.5 ms**) while Default Blend (`T=0.05`) preserves slightly higher transfer (`85.59%` vs `84.39%` F1). | [Argmax vs Blend](outputs/exp3_argmax_vs_blend.png) |
+| **Exp 4: 3D Meta-World Manipulation** | [`experiments/benchmark_metaworld_cl.py`](experiments/benchmark_metaworld_cl.py) | Ported directly to 4-DoF 3D MuJoCo manipulation (`button-press-v3 -> door-open-v3 -> window-open-v3 -> faucet-open-v3`) with 128×128 RGB + 4-d EEF & DoG+Conv4 key: **91.7% Avg SR / 0.0% FR / +11.1% BWT** (**100.0% autonomous routing accuracy without test-time `Task-ID`**, `99.71%` conf) vs Naive FT `43.3% / 75.6% FR`, Replay `88.3% / 13.3% FR`, Oracle Slots `90.0%`. | [Meta-World 3D CL](outputs/exp4_metaworld_cl.png) |
 
 <p align="center">
   <img src="outputs/exp3_argmax_vs_blend.png" width="49%" alt="Select-then-Blend vs Hard Argmax">
@@ -97,13 +97,13 @@ To stress-test every theoretical and empirical claim under strict continual lear
 
 ### Meta-World 3D Continual Manipulation Summary (`outputs/exp4_metaworld_cl.json`)
 
-| Method | Test Task-ID? | Replay? | Final Avg SR (↑) | FR (↓) | BWT (↑) | Routing Acc | Total Params |
+| Method | Test-Time `Task-ID`? | Replay? | Final Avg SR (↑) | FR (↓) | BWT (↑) | Autonomous Routing (No `Task-ID`) | Total Params |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Naive FT (1-Head B-Spline) | — | No | 43.3% | 75.6% | -75.6% | — | 1.60M |
-| Experience Replay (256/task) | — | Yes | 88.3% | 13.3% | -13.3% | — | 1.60M |
-| Oracle Task-ID Slots | Yes | No | 90.0% | 0.0% | +0.0% | 100.0% (Oracle) | 2.19M |
-| **Autonomous 3D ABK (Hard Argmax)** | **No** | **No** | 86.7% | **0.0%** | +0.0% | **100.0%** | 2.19M |
-| **Autonomous 3D ABK (Select-then-Blend)** | **No** | **No** | **91.7%** | **0.0%** | **+11.1%** | **100.0%** | 2.19M |
+| Naive FT (1-Head B-Spline) | Not Used | No | 43.3% | 75.6% | -75.6% | — | 1.60M |
+| Experience Replay (256/task) | Not Used | Yes | 88.3% | 13.3% | -13.3% | — | 1.60M |
+| Oracle Slots (External ID) | **Required** | No | 90.0% | 0.0% | +0.0% | Oracle-Selected | 2.19M |
+| **Autonomous 3D ABK (Hard Argmax)** | **None** | **No** | 86.7% | **0.0%** | +0.0% | **100.0%** (No `Task-ID`) | 2.19M |
+| **Autonomous 3D ABK (Select-then-Blend)** | **None** | **No** | **91.7%** | **0.0%** | **+11.1%** | **100.0%** (No `Task-ID`) | 2.19M |
 
 ---
 
@@ -122,6 +122,8 @@ To ensure transparent scientific interpretation, we explicitly define the operat
 abk-vla/
 ├── README.md                              # Project overview, benchmark tables, and visual results
 ├── requirements.txt                       # Core Python dependencies (+ optional 3D Meta-World packages)
+├── .zenodo.json                           # Zenodo DOI archival metadata (Son, Seungjoon / MIT)
+├── RELEASE_NOTES_v1.1.2.md                # Release notes draft for GitHub Release v1.1.2
 ├── paper/
 │   ├── ABK_VLA_Paper.tex                  # Full two-column LaTeX preprint manuscript
 │   ├── ABK_VLA_Preprint.pdf               # Compiled preprint PDF
@@ -196,14 +198,16 @@ python experiments/benchmark_autonomous_cl.py \
 python -m unittest tests/test_bspline_core.py tests/test_bspline_policy.py -v
 
 # Exp 1: OOD perturbation routing curves, key weight ablation & closed-loop OOD F1
+# (reads outputs/autonomous_model_d_final.pth & outputs/autonomous_cl_benchmark.json)
 python experiments/eval_routing_perturbation.py
 
 # Exp 2: 3-seed ({42,43,44}) Forward & Reverse task-order benchmark
-python experiments/benchmark_multiseed_order.py --seeds 42 43 44 --orders forward reverse
+python experiments/benchmark_multiseed_order.py --seeds 42 43 44 --orders forward reverse --epochs-t0 10 --epochs-slot 12
 
 # Exp 3: Select-then-Blend (T sweep) vs Hard Argmax slot routing
+# (reads outputs/autonomous_model_d_final.pth & outputs/autonomous_cl_benchmark.json)
 python experiments/eval_argmax_vs_blend.py
 
 # Exp 4: 3D Meta-World 4-task continual manipulation (requires gymnasium, mujoco, metaworld)
-python experiments/benchmark_metaworld_cl.py --epochs 55 --n-eval 15
+python experiments/benchmark_metaworld_cl.py --epochs 55 --n-demos 30 --n-eval 15 --seed 42
 ```

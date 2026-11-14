@@ -241,7 +241,7 @@ def save_outputs(all_data: Dict, out_json: Path, out_png: Path) -> None:
     if not all_data.get("aggregates"):
         return
 
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4.5), dpi=160)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), dpi=200)
     fig.patch.set_facecolor("#F8FAFC")
 
     entries = []
@@ -258,23 +258,24 @@ def save_outputs(all_data: Dict, out_json: Path, out_png: Path) -> None:
     x = np.arange(len(labels))
     cols = ["#2563EB", "#16A34A", "#7C3AED", "#0D9488"][: len(labels)]
 
-    for ax, metric, title, ylim in [
-        (axes[0], "avg_f1_mean_std", "Average Final F1 (%) ↑", (0, 100)),
-        (axes[1], "fr_mean_std", "Forgetting Rate (%) ↓", (0, 20)),
-        (axes[2], "routing_diag_mean_std", "Diagonal Routing Conf. (%) ↑", (90, 101)),
+    for ax, metric, title, ylim, pad in [
+        (axes[0], "avg_f1_mean_std", "Average Final F1 (%) ↑", (0, 102), 1.8),
+        (axes[1], "fr_mean_std", "Forgetting Rate (%) ↓", (0, 20), 0.7),
+        (axes[2], "routing_diag_mean_std", "Diagonal Routing Conf. (%) ↑", (90, 102.2), 0.35),
     ]:
         means = [e[1][metric][0] for e in entries]
         stds = [e[1][metric][1] for e in entries]
         ax.bar(x, means, yerr=stds, capsize=5, color=cols, alpha=0.92)
-        ax.set_title(title, fontweight="bold")
+        ax.set_title(title, fontsize=11, fontweight="bold")
         ax.set_ylim(*ylim)
         ax.set_xticks(x)
-        ax.set_xticklabels(labels, fontsize=8.5)
+        ax.set_xticklabels(labels, fontsize=9)
         ax.grid(axis="y", alpha=0.3)
         for i, (m, s) in enumerate(zip(means, stds)):
-            ax.text(i, min(ylim[1] - 1.0, m + s + 0.6), f"{m:.2f}±{s:.2f}", ha="center", fontsize=8)
+            y_txt = min(ylim[1] - pad * 0.7, m + s + pad)
+            ax.text(i, y_txt, f"{m:.2f}±{s:.2f}", ha="center", va="bottom", fontsize=8.5, fontweight="medium")
 
-    plt.suptitle("Experiment 2: Multi-Seed & Task-Order Robustness (Mean ± Std)", fontweight="bold")
+    plt.suptitle("Experiment 2: Multi-Seed & Task-Order Robustness (Mean ± Std)", fontsize=12.5, fontweight="bold")
     plt.tight_layout()
     safe_savefig(out_png)
 
