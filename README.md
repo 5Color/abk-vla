@@ -5,9 +5,10 @@
 [![Continual Learning](https://img.shields.io/badge/Continual%20Learning-Task--ID--Free%20Inference-2ea44f.svg)](#)
 [![Forgetting](https://img.shields.io/badge/Forgetting%20Rate-1.66%25-brightgreen.svg)](#)
 [![Paper](https://img.shields.io/badge/Preprint-PDF-red.svg)](./paper/ABK_VLA_Preprint.pdf)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24208545.svg)](https://doi.org/10.5281/zenodo.24208545)
+[![DOI (v1.1.3)](https://zenodo.org/badge/DOI/10.5281/zenodo.24212130.svg)](https://doi.org/10.5281/zenodo.24212130)
+[![Zenodo Concept DOI](https://img.shields.io/badge/Zenodo%20All%20Versions-10.5281%2Fzenodo.24208544-blue.svg)](https://doi.org/10.5281/zenodo.24208544)
 
-> **Follow-up Architecture (DTRA):** Our standalone successor scaling to 8 continual 3D Meta-World tasks with $`O(1)`$ CPU inference and Elastic Snap-Back of Hypertube Rings is published at **[https://github.com/5Color/dtra](https://github.com/5Color/dtra)**.
+> **Follow-up Architecture (DTRA v3.0.0):** Our standalone successor scaling to 100 sequential 7-DoF LIBERO-100 tasks (`87.00 ± 0.86%` final SR across 3 seeds, `99.90%` routing, `27` frozen shared motor bases) and 8 continual 3D Meta-World tasks with an $`O(1)`$ active decoding core and Two-Timescale Elastic Snap-Back on $`\mathbb{S}^{63}`$ is published at **[https://github.com/5Color/dtra](https://github.com/5Color/dtra)** (Zenodo v3.0.0 DOI: [`10.5281/zenodo.24297711`](https://doi.org/10.5281/zenodo.24297711)).
 
 > **Can a lightweight visuomotor policy learn sequential multi-stroke manipulation tasks without catastrophic forgetting, without an experience replay buffer, and without ground-truth `Task-ID` labels at inference time?**
 
